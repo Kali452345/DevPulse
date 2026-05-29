@@ -52,10 +52,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: 
-    radial-gradient(circle at 15% 10%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(0, 212, 255, 0.06) 0%, transparent 50%),
-    radial-gradient(circle at 50% 80%, rgba(236, 72, 153, 0.05) 0%, transparent 60%);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, transparent 40%, rgba(0, 212, 255, 0.04) 100%);
   pointer-events: none;
   z-index: -1;
 }
@@ -64,9 +61,10 @@ body::after {
   content: '';
   position: fixed;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+  background: repeating-conic-gradient(rgba(255,255,255,0.01) 0% 25%, transparent 0% 50%) 0 0 / 4px 4px;
   pointer-events: none;
   z-index: -1;
+  opacity: 0.4;
 }
 
 /* ─── Scrollbar ─── */
@@ -125,7 +123,7 @@ body::after {
 
 .logo-icon {
   font-size: 28px;
-  filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.5));
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
 }
 
 .logo-text {
@@ -314,21 +312,21 @@ body::after {
   border-left-color: var(--accent-cyan);
 }
 .feed-card[data-source="hackernews"]:hover {
-  box-shadow: 0 8px 32px rgba(0, 212, 255, 0.08), inset 0 0 0 1px rgba(0, 212, 255, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.06);
 }
 
 .feed-card[data-source="devto"] {
   border-left-color: var(--accent-purple);
 }
 .feed-card[data-source="devto"]:hover {
-  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.08), inset 0 0 0 1px rgba(139, 92, 246, 0.06);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.06);
 }
 
 .feed-card[data-source="ai-news"] {
   border-left-color: var(--accent-pink);
 }
 .feed-card[data-source="ai-news"]:hover {
-  box-shadow: 0 8px 32px rgba(236, 72, 153, 0.08), inset 0 0 0 1px rgba(236, 72, 153, 0.06);
+  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.06);
 }
 
 /* Card layout */
@@ -836,6 +834,48 @@ body::after {
   }
 }
 
+/* ═══════════════ Responsive 3-Column Layout ═══════════════ */
+@media (max-width: 1200px) {
+  .dashboard-layout {
+    grid-template-columns: 240px 1fr;
+  }
+  .right-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+    padding: 12px;
+    gap: 12px;
+  }
+  .sidebar {
+    position: fixed;
+    left: -280px;
+    top: 0;
+    bottom: 0;
+    z-index: 100;
+    transition: left 0.3s ease;
+    width: 260px;
+    height: 100vh;
+    border-radius: 0;
+    background: var(--bg-secondary);
+  }
+  .sidebar.open {
+    left: 0;
+  }
+  .right-panel {
+    display: none;
+  }
+  .search-container {
+    margin-bottom: 16px;
+  }
+  .feed-container {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ═══════════════════════════════════════════════
    LIGHT THEME STYLES
    ═══════════════════════════════════════════════ */
@@ -1018,7 +1058,6 @@ body::after {
 
 .bookmark-btn.active {
   color: var(--accent-orange);
-  filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.4));
 }
 
 /* ═══════════════════════════════════════════════
@@ -1657,5 +1696,52 @@ body::after {
   }
 }
 
+/* ═══════════════════════════════════════════════
+   MOBILE MENU ELEMENTS
+   ═══════════════════════════════════════════════ */
+.mobile-menu-btn {
+  display: none;
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 20px;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.mobile-menu-btn:hover {
+  background: var(--bg-card-hover);
+}
 
+.mobile-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+}
+.mobile-overlay.open {
+  display: block;
+}
+
+.mobile-top-bar {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex;
+  }
+  .mobile-top-bar {
+    display: flex;
+  }
+}
 

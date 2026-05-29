@@ -38,7 +38,9 @@ export default async (req) => {
       let index = [];
       try {
         index = (await store.getJSON("article-index")) || [];
-      } catch {}
+      } catch (err) {
+        console.error('Articles store error reading index for delete:', err);
+      }
 
       const updatedIndex = index.filter((item) => item.id !== id);
       await store.setJSON("article-index", updatedIndex);
@@ -68,7 +70,9 @@ export default async (req) => {
     let index = [];
     try {
       index = (await store.getJSON("article-index")) || [];
-    } catch {}
+    } catch (err) {
+      console.error('Articles store error reading index:', err);
+    }
 
     // Support pagination: ?page=1&limit=10
     const page = parseInt(urlObj.searchParams.get("page") || "1", 10);

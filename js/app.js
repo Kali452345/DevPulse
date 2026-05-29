@@ -242,12 +242,7 @@
     }
 
     // Refresh UI
-    if (activeFilter === 'bookmarks') {
-      renderFeed();
-    } else {
-      // Re-render current feed to update icons
-      renderFeed();
-    }
+    renderFeed();
   };
 
   // ═══════════════════════════════════════════════
@@ -375,13 +370,14 @@
   const fetchAllFeeds = async () => {
     renderSkeletons();
 
-    const [devto, ai] = await Promise.all([
+    const [devto, ai, hn] = await Promise.all([
       fetchFeed('/api/devto', 'devto'),
       fetchFeed('/api/ai-news', 'ai-news'),
+      fetchFeed('/api/hn', 'hackernews'),
       fetchArticles() // Pre-fetch DevPulse Original articles in background
     ]);
 
-    allArticles = [...devto, ...ai].sort((a, b) => {
+    allArticles = [...devto, ...ai, ...hn].sort((a, b) => {
       const tA = new Date(a.time || a.published_at || a.date || 0).getTime();
       const tB = new Date(b.time || b.published_at || b.date || 0).getTime();
       return tB - tA;
@@ -397,6 +393,7 @@
   // ═══════════════════════════════════════════════
 
   const sourceConfig = {
+    hackernews: { label: 'HackerNews', cssClass: 'hn' },
     devto: { label: 'Dev.to', cssClass: 'devto' },
     'ai-news': { label: 'TensorFeed', cssClass: 'ai' },
   };
@@ -427,7 +424,7 @@
         const dateStr = article.generatedAt ? new Date(article.generatedAt).toLocaleDateString() : '';
 
         return `
-          <div class="article-card" style="animation-delay:${i * 50}ms">
+          <div class="article-card" style="animation-delay:${i < 8 ? i * 50 : 0}ms">
             <div class="article-card-cover-container">
               ${coverImg}
             </div>
@@ -513,7 +510,7 @@
         : '';
 
       return `
-        <article class="feed-card" data-source="${article.source}" style="animation-delay:${i * 50}ms">
+        <article class="feed-card" data-source="${article.source}" style="animation-delay:${i < 8 ? i * 50 : 0}ms">
           <div class="card-top">
             <div class="card-meta-left">
               <span class="source-badge ${src.cssClass}">${src.label}</span>
@@ -522,7 +519,7 @@
             <div style="display:flex; align-items:center; gap:10px;">
               <span class="card-time">${timeAgo(dateStr)}</span>
               <button class="bookmark-btn ${isBooked ? 'active' : ''}" data-index="${i}" title="${isBooked ? 'Unsave Bookmark' : 'Save Bookmark'}">
-                ${isBooked ? '🔖' : 'bookmark_border'}
+                ${isBooked ? '🔖' : '📑'}
               </button>
             </div>
           </div>
@@ -576,9 +573,11 @@
   };
 
   // ─── Search input real-time handler ───
+  let searchTimeout;
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value;
-    renderFeed();
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => renderFeed(), 300);
   });
 
   // Short-cut handlers (Ctrl+K or '/' to focus search)
@@ -790,7 +789,8 @@
       articleReaderTitle.textContent = article.title;
 
       // Parse Markdown body to HTML
-      articleReaderBody.innerHTML = parseMarkdown(article.content);
+      const bodyContent = article.content || article.body_html || article.body_markdown || '';
+      articleReaderBody.innerHTML = parseMarkdown(bodyContent);
 
       articleSourceLink.href = article.sourceUrl || '#';
       articleModelBadge.textContent = `Model: ${article.model || 'gemini-2.5-flash'}`;
@@ -810,6 +810,7 @@
     
     const devtoCount = allArticles.filter(a => a.source === 'devto').length;
     const aiCount = allArticles.filter(a => a.source === 'ai-news').length;
+    const hnCount = allArticles.filter(a => a.source === 'hackernews').length;
     const generatedCount = devpulseArticles.length;
     const bookmarkCount = getBookmarks().length;
     const totalFeedCount = allArticles.length;
@@ -830,9 +831,10 @@
       .slice(0, 8);
 
     // Calculate source percentages
-    const maxVal = Math.max(devtoCount, aiCount, 1);
+    const maxVal = Math.max(devtoCount, aiCount, hnCount, 1);
     const devtoPct = Math.round((devtoCount / maxVal) * 100);
     const aiPct = Math.round((aiCount / maxVal) * 100);
+    const hnPct = Math.round((hnCount / maxVal) * 100);
 
     dashboardBody.innerHTML = \`
       <div class="db-grid">
@@ -870,6 +872,16 @@
           </div>
           <div class="db-bar-track">
             <div class="db-bar-fill" style="width: \${aiPct}%; background: var(--accent-pink);"></div>
+          </div>
+        </div>
+
+        <div class="db-bar-item">
+          <div class="db-bar-lbls">
+            <span>HackerNews stories</span>
+            <span>\${hnCount} stories</span>
+          </div>
+          <div class="db-bar-track">
+            <div class="db-bar-fill" style="width: \${hnPct}%; background: var(--accent-cyan);"></div>
           </div>
         </div>
       </div>
@@ -945,6 +957,32 @@
 
     // Initialize AI Chat Widget
     initChatWidget();
+
+    // Mobile sidebar toggle
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileOverlay = document.getElementById('mobile-overlay');
+    const sidebarEl = document.querySelector('.sidebar');
+    if (mobileMenuBtn && sidebarEl) {
+      mobileMenuBtn.addEventListener('click', () => {
+        sidebarEl.classList.toggle('open');
+        if (mobileOverlay) mobileOverlay.classList.toggle('open');
+      });
+      if (mobileOverlay) {
+        mobileOverlay.addEventListener('click', () => {
+          sidebarEl.classList.remove('open');
+          mobileOverlay.classList.remove('open');
+        });
+      }
+      // Close sidebar when filter button is clicked on mobile
+      filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (window.innerWidth <= 768) {
+            sidebarEl.classList.remove('open');
+            if (mobileOverlay) mobileOverlay.classList.remove('open');
+          }
+        });
+      });
+    }
   };
 
   // ═══════════════════════════════════════════════

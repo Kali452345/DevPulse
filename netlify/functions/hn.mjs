@@ -1,75 +1,123 @@
-// hn.mjs — HackerNews Proxy (Netlify Function)
-// Fetches top 30 stories from HN Algolia API with 5-minute in-memory cache.
+// hn.mjs — HackerNews Feed Proxy with Netlify Blobs Caching
+// Fetches live from HN Algolia API and caches in Netlify Blobs.
+// Subsequent visits read from Blobs (fast). Supports ?force=true to refresh.
 
-const ALGOLIA_URL =
-  "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30";
+import { getStore } from "@netlify/blobs";
 
-// ── In-memory cache ────────────────────────────────────────────────
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-let cache = { data: null, timestamp: 0 };
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
-// ── CORS headers applied to every response ─────────────────────────
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-/**
- * Normalize an Algolia hit into the DevPulse standard shape.
- */
-function normalize(hit) {
-  return {
-    id: hit.objectID,
-    title: hit.title,
-    url: hit.url,
-    points: hit.points,
-    author: hit.author,
-    time: hit.created_at,
-    comments: hit.num_comments,
-    source: "hackernews",
-  };
-}
-
 export default async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
+  const urlObj = new URL(req.url);
+  const force = urlObj.searchParams.get("force") === "true";
+
   try {
-    // Return cached data if still fresh
-    const now = Date.now();
-    if (cache.data && now - cache.timestamp < CACHE_TTL) {
-      return new Response(JSON.stringify(cache.data), {
+    const store = getStore("feeds");
+
+    // Check Blobs cache first
+    if (!force) {
+      try {
+        const cached = await store.get("hn-feed", { type: "json" });
+        if (cached && cached.timestamp && Date.now() - cached.timestamp < CACHE_TTL) {
+          return new Response(JSON.stringify(cached.articles), {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+              "X-Cache": "HIT",
+              "X-Cache-Age": String(Math.round((Date.now() - cached.timestamp) / 1000)),
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Blobs cache read failed for hn-feed:", err.message);
+      }
+    }
+
+    // Fetch live from HN Algolia API
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(
+      "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30",
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      // Try returning stale cache if API fails
+      try {
+        const stale = await store.get("hn-feed", { type: "json" });
+        if (stale && stale.articles) {
+          return new Response(JSON.stringify(stale.articles), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
+          });
+        }
+      } catch {}
+      return new Response(JSON.stringify([]), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch from Algolia
-    const res = await fetch(ALGOLIA_URL);
-    if (!res.ok) {
-      throw new Error(`Algolia returned ${res.status}`);
+    const data = await res.json();
+    const articles = (data.hits || [])
+      .filter((h) => h.title)
+      .map((h) => ({
+        id: h.objectID,
+        title: h.title,
+        url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+        link: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+        by: h.author || "",
+        author: h.author || "",
+        time: h.created_at || new Date(h.created_at_i * 1000).toISOString(),
+        points: h.points || 0,
+        score: h.points || 0,
+        descendants: h.num_comments || 0,
+        comments_count: h.num_comments || 0,
+        source: "hackernews",
+      }));
+
+    // Save to Netlify Blobs
+    try {
+      await store.setJSON("hn-feed", { articles, timestamp: Date.now() });
+    } catch (err) {
+      console.warn("Failed to save hn-feed to Blobs:", err.message);
     }
 
-    const json = await res.json();
-    const stories = (json.hits || []).map(normalize);
+    return new Response(JSON.stringify(articles), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "MISS" },
+    });
 
-    // Update cache
-    cache = { data: stories, timestamp: now };
-
-    return new Response(JSON.stringify(stories), {
+  } catch (err) {
+    console.error("HackerNews endpoint error:", err);
+    // Try stale cache on any error
+    try {
+      const store = getStore("feeds");
+      const stale = await store.get("hn-feed", { type: "json" });
+      if (stale && stale.articles) {
+        return new Response(JSON.stringify(stale.articles), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
+        });
+      }
+    } catch {}
+    return new Response(JSON.stringify([]), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: "Failed to fetch HackerNews stories", detail: err.message }),
-      { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   }
 };
 
-// Netlify Functions v2 config
 export const config = { path: "/api/hn" };

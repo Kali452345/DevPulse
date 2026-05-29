@@ -47,12 +47,12 @@ Requirements:
   const keys = (process.env.GEMINI_API_KEY || "").split(",").map(k => k.trim()).filter(Boolean);
   if (keys.length === 0) return { content: null, model: null };
 
-  // Attempt using the first available key
-  const apiKey = keys[0];
-  const apiUr = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  let keyIndex = 0;
+  const apiKey = keys[keyIndex % keys.length];
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   try {
-    const res = await fetch(apiUr, {
+    const res = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -216,7 +216,8 @@ export default async () => {
           tags: item.tags,
           generatedAt,
           readTime,
-          model
+          model,
+          sourceUrl: item.url || ""
         });
 
         // Add small pause between generations

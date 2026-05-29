@@ -1,92 +1,129 @@
-// ai-news.mjs — TensorFeed AI News Proxy (Netlify Function)
-// Fetches AI/ML news from TensorFeed with graceful degradation.
-// If TensorFeed is unreachable, returns an empty array instead of crashing.
+// ai-news.mjs — TensorFeed AI News Proxy with Netlify Blobs Caching
+// Fetches AI/ML news from TensorFeed and caches in Netlify Blobs.
+// Subsequent visits read from Blobs. Supports ?force=true to refresh.
 
-const TENSORFEED_URL = "https://tensorfeed.ai/api/v1/news";
+import { getStore } from "@netlify/blobs";
 
-// ── In-memory cache ────────────────────────────────────────────────
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-let cache = { data: null, timestamp: 0 };
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
-// ── CORS headers applied to every response ─────────────────────────
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-/**
- * Normalize a TensorFeed item into the DevPulse standard shape.
- */
-function normalize(item) {
-  return {
-    id: item.id,
-    title: item.title,
-    url: item.url,
-    summary: item.summary,
-    description: item.summary || item.description || "",
-    cover_image: item.cover_image ?? item.image ?? item.thumbnail ?? "",
-    time: item.time ?? item.published_at ?? item.created_at,
-    source: "tensorfeed",
-  };
-}
-
 export default async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
+  const urlObj = new URL(req.url);
+  const force = urlObj.searchParams.get("force") === "true";
+
   try {
-    // Return cached data if still fresh
-    const now = Date.now();
-    if (cache.data && now - cache.timestamp < CACHE_TTL) {
-      return new Response(JSON.stringify(cache.data), {
+    const store = getStore("feeds");
+
+    // Check Blobs cache first
+    if (!force) {
+      try {
+        const cached = await store.get("ai-feed", { type: "json" });
+        if (cached && cached.timestamp && Date.now() - cached.timestamp < CACHE_TTL) {
+          return new Response(JSON.stringify(cached.articles), {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+              "X-Cache": "HIT",
+              "X-Cache-Age": String(Math.round((Date.now() - cached.timestamp) / 1000)),
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Blobs cache read failed for ai-feed:", err.message);
+      }
+    }
+
+    // Fetch fresh from TensorFeed API with timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    let res;
+    try {
+      res = await fetch("https://tensorfeed.ai/api/v1/news", {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      // API unreachable — try returning stale cache
+      try {
+        const stale = await store.get("ai-feed", { type: "json" });
+        if (stale && stale.articles) {
+          return new Response(JSON.stringify(stale.articles), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
+          });
+        }
+      } catch {}
+      return new Response(JSON.stringify({ articles: [], error: "TensorFeed unavailable" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Attempt to fetch from TensorFeed (with a 5-second timeout)
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
-    let stories;
-    try {
-      const res = await fetch(TENSORFEED_URL, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        throw new Error(`TensorFeed returned ${res.status}`);
-      }
-
-      const json = await res.json();
-      // Handle both array responses and { data: [...] } wrappers
-      const items = Array.isArray(json) ? json : json.data ?? json.articles ?? [];
-      stories = items.map(normalize);
-    } catch (fetchErr) {
-      clearTimeout(timeout);
-      // TensorFeed is unreachable — return graceful fallback
-      return new Response(
-        JSON.stringify({ articles: [], error: "TensorFeed unavailable" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!res.ok) {
+      // Try stale cache
+      try {
+        const stale = await store.get("ai-feed", { type: "json" });
+        if (stale && stale.articles) {
+          return new Response(JSON.stringify(stale.articles), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
+          });
+        }
+      } catch {}
+      return new Response(JSON.stringify({ articles: [], error: `TensorFeed returned ${res.status}` }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Update cache
-    cache = { data: stories, timestamp: now };
+    const raw = await res.json();
+    const items = Array.isArray(raw) ? raw : raw.data ?? raw.articles ?? [];
 
-    return new Response(JSON.stringify(stories), {
+    const articles = items.map((item) => ({
+      id: item.id || item.url || `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: item.title || "Untitled",
+      url: item.url || item.link || "#",
+      link: item.url || item.link || "#",
+      date: item.date || item.published_at || item.publishedAt || new Date().toISOString(),
+      published_at: item.date || item.published_at || item.publishedAt || new Date().toISOString(),
+      summary: item.summary || item.description || "",
+      description: item.summary || item.description || "",
+      author: item.author || item.source || "",
+      tags: item.tags || item.categories || [],
+      source: "ai-news",
+    }));
+
+    // Save to Netlify Blobs
+    try {
+      await store.setJSON("ai-feed", { articles, timestamp: Date.now() });
+    } catch (err) {
+      console.warn("Failed to save ai-feed to Blobs:", err.message);
+    }
+
+    return new Response(JSON.stringify(articles), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "MISS" },
+    });
+
+  } catch (err) {
+    console.error("AI News endpoint error:", err);
+    return new Response(JSON.stringify({ articles: [], error: err.message }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ articles: [], error: "TensorFeed unavailable" }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   }
 };
 
-// Netlify Functions v2 config
 export const config = { path: "/api/ai-news" };

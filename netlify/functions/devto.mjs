@@ -1,116 +1,149 @@
-// devto.mjs — Dev.to Proxy (Netlify Function)
-// Fetches top 30 articles from Dev.to with 5-minute in-memory cache.
+// devto.mjs — Dev.to Feed Proxy with Netlify Blobs Caching
+// Stores feed data in Netlify Blobs so page loads are instant.
+// Supports ?force=true to refresh from the Dev.to API.
+// Single article endpoint returns body_markdown for the reader.
 
-const DEVTO_URL = "https://dev.to/api/articles?per_page=30&top=1";
+import { getStore } from "@netlify/blobs";
 
-// ── In-memory cache ────────────────────────────────────────────────
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-let cache = { data: null, timestamp: 0 };
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
-// ── CORS headers applied to every response ─────────────────────────
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-/**
- * Normalize a Dev.to article into the DevPulse standard shape.
- */
-function normalize(article) {
-  return {
-    id: article.id,
-    title: article.title,
-    url: article.url,
-    points: article.positive_reactions_count,
-    author: article.user?.name ?? article.user?.username ?? "Unknown",
-    time: article.published_at,
-    comments: article.comments_count,
-    tags: article.tag_list,
-    cover_image: article.cover_image || article.social_image || "",
-    description: article.description || "",
-    source: "devto",
-  };
-}
-
 export default async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   const urlObj = new URL(req.url);
-  const articleId = urlObj.searchParams.get("id");
-
-  if (articleId) {
-    try {
-      const res = await fetch(`https://dev.to/api/articles/${articleId}`);
-      if (!res.ok) {
-        throw new Error(`Dev.to returned ${res.status}`);
-      }
-      const data = await res.json();
-      return new Response(JSON.stringify({
-        id: data.id,
-        title: data.title,
-        content: data.body_markdown || data.description || "",
-        coverImage: data.cover_image || data.social_image || "",
-        sourceUrl: data.url,
-        source: "devto",
-        tags: data.tags || [],
-        generatedAt: data.published_at,
-        model: "Dev.to API"
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-  }
+  const id = urlObj.searchParams.get("id");
+  const force = urlObj.searchParams.get("force") === "true";
 
   try {
-    // Return cached data if still fresh
-    const now = Date.now();
-    if (cache.data && now - cache.timestamp < CACHE_TTL) {
-      return new Response(JSON.stringify(cache.data), {
+    // ── Single Article Fetch (with markdown body) ──────────────────
+    if (id) {
+      const res = await fetch(`https://dev.to/api/articles/${id}`, {
+        headers: {
+          ...(process.env.DEVTO_API_KEY ? { "api-key": process.env.DEVTO_API_KEY } : {}),
+          Accept: "application/json",
+        },
+      });
+
+      if (!res.ok) {
+        return new Response(JSON.stringify({ error: `Dev.to API returned ${res.status}` }), {
+          status: res.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const article = await res.json();
+
+      return new Response(JSON.stringify({
+        id: article.id,
+        title: article.title,
+        content: article.body_markdown || article.body_html || article.description || "",
+        coverImage: article.cover_image || article.social_image || "",
+        source: "devto",
+        sourceUrl: article.url,
+        readTime: article.reading_time_minutes || 3,
+        generatedAt: article.published_at,
+        tags: article.tag_list || article.tags || [],
+        author: article.user?.name || article.user?.username || "",
+        model: "dev.to native",
+      }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Build request headers — include API key if available
-    const headers = { Accept: "application/json" };
-    const apiKey = process.env.DEVTO_API_KEY;
-    if (apiKey) {
-      headers["api-key"] = apiKey;
+    // ── Feed List (with Blobs caching) ─────────────────────────────
+    const store = getStore("feeds");
+
+    // Check Blobs cache first
+    if (!force) {
+      try {
+        const cached = await store.get("devto-feed", { type: "json" });
+        if (cached && cached.timestamp && Date.now() - cached.timestamp < CACHE_TTL) {
+          return new Response(JSON.stringify(cached.articles), {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+              "X-Cache": "HIT",
+              "X-Cache-Age": String(Math.round((Date.now() - cached.timestamp) / 1000)),
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Blobs cache read failed for devto-feed:", err.message);
+      }
     }
 
-    // Fetch from Dev.to
-    const res = await fetch(DEVTO_URL, { headers });
+    // Fetch fresh from Dev.to API
+    const apiHeaders = {
+      Accept: "application/json",
+      ...(process.env.DEVTO_API_KEY ? { "api-key": process.env.DEVTO_API_KEY } : {}),
+    };
+
+    const res = await fetch("https://dev.to/api/articles?per_page=30&top=1", {
+      headers: apiHeaders,
+    });
+
     if (!res.ok) {
-      throw new Error(`Dev.to returned ${res.status}`);
+      // Try returning stale cache if API fails
+      try {
+        const stale = await store.get("devto-feed", { type: "json" });
+        if (stale && stale.articles) {
+          return new Response(JSON.stringify(stale.articles), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
+          });
+        }
+      } catch {}
+      return new Response(JSON.stringify({ articles: [], error: `Dev.to API returned ${res.status}` }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const articles = await res.json();
-    const normalized = articles.map(normalize);
+    const data = await res.json();
+    const articles = data.map((a) => ({
+      id: a.id,
+      title: a.title,
+      url: a.url,
+      author: a.user?.name || a.user?.username || "",
+      published_at: a.published_at,
+      positive_reactions_count: a.positive_reactions_count || 0,
+      comments_count: a.comments_count || 0,
+      tags: a.tag_list || [],
+      tag_list: a.tag_list || [],
+      cover_image: a.cover_image || "",
+      description: a.description || "",
+      source: "devto",
+    }));
 
-    // Update cache
-    cache = { data: normalized, timestamp: now };
+    // Save to Netlify Blobs
+    try {
+      await store.setJSON("devto-feed", { articles, timestamp: Date.now() });
+    } catch (err) {
+      console.warn("Failed to save devto-feed to Blobs:", err.message);
+    }
 
-    return new Response(JSON.stringify(normalized), {
+    return new Response(JSON.stringify(articles), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "MISS" },
+    });
+
+  } catch (err) {
+    console.error("Dev.to endpoint error:", err);
+    return new Response(JSON.stringify({ articles: [], error: err.message }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: "Failed to fetch Dev.to articles", detail: err.message }),
-      { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   }
 };
 
-// Netlify Functions v2 config
 export const config = { path: "/api/devto" };

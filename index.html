@@ -50,6 +50,7 @@
         <h4 class="nav-heading">Feeds</h4>
         <button class="filter-btn active" data-source="all"><span class="btn-icon">🌐</span> All News</button>
         <button class="filter-btn" data-source="devto"><span class="btn-icon">💻</span> Dev.to</button>
+        <button class="filter-btn" data-source="hackernews"><span class="btn-icon">🔶</span> HackerNews</button>
         <button class="filter-btn" data-source="ai-news"><span class="btn-icon">🧠</span> TensorFeed</button>
         
         <h4 class="nav-heading">Library</h4>
@@ -74,8 +75,18 @@
       </div>
     </aside>
 
+    <div class="mobile-overlay" id="mobile-overlay"></div>
+
     <!-- Main Content (Center) -->
     <main class="app-main">
+      <!-- Mobile Top Bar -->
+      <div class="mobile-top-bar" id="mobile-top-bar">
+        <button class="mobile-menu-btn" id="mobile-menu-btn" title="Menu">☰</button>
+        <div class="logo" style="display:flex; align-items:center; gap:8px;">
+          <span class="logo-icon" style="font-size:20px;">⚡</span>
+          <span class="logo-text" style="font-size:18px;">DevPulse</span>
+        </div>
+      </div>
       <!-- Search Bar -->
       <div class="search-container">
         <div class="search-bar">

@@ -246,6 +246,7 @@ export default async (req) => {
     let finalContent = null;
     let finalModel = null;
     let finalCoverImage = "";
+    let metadata = { coverImage: "", description: "", textContent: "" };
     
     // 1. If it's a dev.to article, natively fetch its exact content
     const isDevTo = source === "devto" || url.includes("dev.to");
@@ -260,7 +261,7 @@ export default async (req) => {
 
     // 2. If no native content yet, scrape and use AI
     if (!finalContent) {
-      const metadata = await scrapeMetadata(url);
+      metadata = await scrapeMetadata(url);
       const aiResult = await generateAIArticle(title, url, metadata.description, metadata.textContent);
       
       finalContent = aiResult.content;
@@ -277,13 +278,13 @@ export default async (req) => {
     const generatedAt = new Date().toISOString();
 
     // Word count / read time
-    const words = finalContent.split(/\\s+/).length;
+    const words = finalContent.split(/\s+/).length;
     const readTime = Math.max(1, Math.round(words / 200));
 
     // Excerpt: first 160 chars from the content (strip markdown)
     const excerpt = finalContent
       .replace(/[#*\`_-]/g, "")
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .slice(0, 160)
       .trim() + "...";
 
@@ -318,12 +319,13 @@ export default async (req) => {
       id: articleId,
       title,
       excerpt,
-      coverImage: metadata.coverImage || "",
+      coverImage: finalCoverImage || metadata.coverImage || "",
       source,
       tags,
       generatedAt,
       readTime,
-      model
+      model: finalModel || "unknown",
+      sourceUrl: url || ""
     });
 
     // Save index

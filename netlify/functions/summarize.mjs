@@ -325,6 +325,12 @@ export default async (req) => {
       timestamp: Date.now(),
     });
 
+    // LRU-style eviction: cap at 100 entries
+    if (responseCache.size > 100) {
+      const keysToDelete = [...responseCache.keys()].slice(0, 20);
+      keysToDelete.forEach(k => responseCache.delete(k));
+    }
+
     return new Response(
       JSON.stringify({ summary: resultText, model: usedModel, cached: false }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
