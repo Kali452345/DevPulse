@@ -160,6 +160,35 @@
     <p class="footer-note">All APIs cached and optimized for high-performance offline developer utility</p>
   </footer>
 
+  <!-- ═══════════════ AI CHAT WIDGET ═══════════════ -->
+  <button class="chat-floating-btn" id="chat-toggle-btn" title="Ask DevPulse AI">
+    <span class="chat-icon">💬</span>
+  </button>
+
+  <div class="chat-widget-container" id="chat-widget">
+    <div class="chat-header">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="logo-icon" style="font-size: 16px;">⚡</span>
+        <span style="font-weight: 700; font-size: 13px;">DevPulse AI Assistant</span>
+      </div>
+      <button class="chat-close" id="chat-close-btn">&times;</button>
+    </div>
+    <div class="chat-messages" id="chat-messages-container">
+      <div class="chat-msg ai">
+        Hello! I am DevPulse AI, your developer intelligence assistant. Ask me anything about today's tech news, headlines, trends, or programming!
+      </div>
+    </div>
+    <div class="chat-quick-questions">
+      <button class="quick-q-btn" data-query="What are the key tech trends today?">📊 What is trending today?</button>
+      <button class="quick-q-btn" data-query="Summarize today's top HackerNews stories.">📰 Summarize HackerNews</button>
+      <button class="quick-q-btn" data-query="What is the latest AI and machine learning news?">🧠 Top AI News</button>
+    </div>
+    <div class="chat-input-bar">
+      <input type="text" id="chat-input-field" placeholder="Ask a tech question..." autocomplete="off">
+      <button id="chat-send-btn">Send</button>
+    </div>
+  </div>
+
   <!-- Toast container for notifications -->
   <div class="toast-container" id="toast-container"></div>
 

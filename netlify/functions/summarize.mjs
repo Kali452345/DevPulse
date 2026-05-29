@@ -79,6 +79,17 @@ const corsHeaders = {
 // ── Prompt builders ────────────────────────────────────────────────
 
 function buildPrompt(mode, title, url, content) {
+  if (mode === "chat") {
+    return `You are DevPulse AI, an elite, highly knowledgeable developer assistant. 
+Answer this developer's query with rich technical details, helpful descriptions, and code examples if appropriate.
+
+Context (Today's Top Developer Headlines):
+${content}
+
+Developer's Question: "${title}"
+Your Response (in Markdown):`;
+  }
+
   if (mode === "trends") {
     return `You are a tech trend analyst. Analyze these top tech headlines from today and identify 3-4 key trends or themes. Be specific, cite which headlines support each trend, and explain why developers should care.
 

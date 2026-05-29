@@ -544,17 +544,30 @@
               <button class="btn-summarize" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}">
                 <span class="sparkle">✨</span> Summarize
               </button>
+              ${article.source === 'devto' 
+                ? `<button class="btn btn-trend read-devto-btn" data-id="${article.id}">
+                     📖 Read Article
+                   </button>` 
+                : ''
+              }
             </div>
           </div>
         </article>`;
     }).join('');
 
-    // Attach summarize and bookmarks click listeners
+    // Attach summarize, read-devto, and bookmarks click listeners
     feedEl.querySelectorAll('.btn-summarize').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = btn.getAttribute('data-title');
         const u = btn.getAttribute('data-url');
         handleSummarize(t, u);
+      });
+    });
+
+    feedEl.querySelectorAll('.read-devto-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        openArticleReader(id, true);
       });
     });
 
@@ -771,11 +784,12 @@
   };
 
   // Fetch and display full article details in Reader Modal
-  const openArticleReader = async (articleId) => {
+  const openArticleReader = async (articleId, isDevTo = false) => {
     openArticleModal();
 
     try {
-      const res = await fetch(`/api/articles?id=${articleId}`);
+      const endpoint = isDevTo ? `/api/devto?id=${articleId}` : `/api/articles?id=${articleId}`;
+      const res = await fetch(endpoint);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const article = await res.json();
 
@@ -1011,6 +1025,134 @@
     setInterval(() => {
       fetchAllFeeds();
     }, REFRESH_INTERVAL);
+
+    // Initialize AI Chat Widget
+    initChatWidget();
+  };
+
+  // ═══════════════════════════════════════════════
+  //  AI CHAT WIDGET CONTROLLER
+  // ═══════════════════════════════════════════════
+
+  const initChatWidget = () => {
+    const toggleBtn = document.getElementById('chat-toggle-btn');
+    const widget = document.getElementById('chat-widget');
+    const closeBtn = document.getElementById('chat-close-btn');
+    const sendBtn = document.getElementById('chat-send-btn');
+    const inputField = document.getElementById('chat-input-field');
+    const msgsContainer = document.getElementById('chat-messages-container');
+    const quickBtns = document.querySelectorAll('.quick-q-btn');
+
+    let isTyping = false;
+
+    const toggleChat = () => {
+      widget.classList.toggle('open');
+      if (widget.classList.contains('open')) {
+        inputField.focus();
+        // Clear notifications badge if opened
+        notificationBadge.style.display = 'none';
+      }
+    };
+
+    toggleBtn.addEventListener('click', toggleChat);
+    closeBtn.addEventListener('click', () => widget.classList.remove('open'));
+
+    // Gathers currently visible feed headline titles for rich technical context
+    const getChatContext = () => {
+      if (allArticles.length === 0) return 'No news headlines loaded yet.';
+      return allArticles
+        .slice(0, 10)
+        .map(art => `- ${art.title} (${art.source})`)
+        .join('\n');
+    };
+
+    const appendMessage = (text, sender = 'ai') => {
+      const msg = document.createElement('div');
+      msg.className = `chat-msg ${sender}`;
+      
+      if (sender === 'ai') {
+        // AI responses are formatted in Markdown, parse it!
+        msg.innerHTML = parseMarkdown(text);
+      } else {
+        msg.textContent = text;
+      }
+      
+      msgsContainer.appendChild(msg);
+      msgsContainer.scrollTop = msgsContainer.scrollHeight;
+      return msg;
+    };
+
+    const appendTypingIndicator = () => {
+      const msg = document.createElement('div');
+      msg.className = 'chat-msg ai typing-indicator-msg';
+      msg.innerHTML = `
+        <div class="chat-typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+      `;
+      msgsContainer.appendChild(msg);
+      msgsContainer.scrollTop = msgsContainer.scrollHeight;
+      return msg;
+    };
+
+    const handleSendMessage = async (textVal) => {
+      const text = (textVal || inputField.value).trim();
+      if (!text || isTyping) return;
+
+      // Clear input
+      inputField.value = '';
+      isTyping = true;
+
+      // Append User message bubble
+      appendMessage(text, 'user');
+
+      // Append AI Typing indicator bubble
+      const indicator = appendTypingIndicator();
+
+      try {
+        const context = getChatContext();
+        const res = await fetch('/api/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: text,
+            content: context,
+            mode: 'chat'
+          })
+        });
+
+        indicator.remove();
+        isTyping = false;
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        
+        const answer = data.summary || data.text || 'Unable to retrieve response.';
+        appendMessage(answer, 'ai');
+
+      } catch (err) {
+        console.error('Chat error:', err);
+        indicator.remove();
+        isTyping = false;
+        appendMessage('DevPulse AI is currently resting. Please try again in a few moments!', 'ai');
+      }
+    };
+
+    sendBtn.addEventListener('click', () => handleSendMessage());
+    inputField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSendMessage();
+      }
+    });
+
+    // Quick starter questions triggers
+    quickBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const query = btn.getAttribute('data-query');
+        handleSendMessage(query);
+      });
+    });
   };
 
   if (document.readyState === 'loading') {
