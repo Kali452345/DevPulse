@@ -12,7 +12,6 @@
   const modalBody = document.getElementById('modal-body');
   const modalModel = document.getElementById('modal-model');
   const modalClose = document.getElementById('modal-close');
-  const trendBtn = document.getElementById('trend-btn');
   const modelStatus = document.getElementById('model-status');
   const toastContainer = document.getElementById('toast-container');
   const filterBtns = document.querySelectorAll('.filter-btn');
@@ -22,9 +21,6 @@
   const themeBtn = document.getElementById('theme-btn');
   const notificationBtn = document.getElementById('notification-btn');
   const notificationBadge = document.getElementById('notification-badge');
-  const dashboardBtn = document.getElementById('dashboard-btn');
-  const dashboardOverlay = document.getElementById('dashboard-overlay');
-  const dashboardClose = document.getElementById('dashboard-close');
   const dashboardBody = document.getElementById('dashboard-body');
 
   const articleModalOverlay = document.getElementById('article-modal-overlay');
@@ -379,14 +375,13 @@
   const fetchAllFeeds = async () => {
     renderSkeletons();
 
-    const [hn, devto, ai] = await Promise.all([
-      fetchFeed('/api/hn', 'hackernews'),
+    const [devto, ai] = await Promise.all([
       fetchFeed('/api/devto', 'devto'),
       fetchFeed('/api/ai-news', 'ai-news'),
       fetchArticles() // Pre-fetch DevPulse Original articles in background
     ]);
 
-    allArticles = [...hn, ...devto, ...ai].sort((a, b) => {
+    allArticles = [...devto, ...ai].sort((a, b) => {
       const tA = new Date(a.time || a.published_at || a.date || 0).getTime();
       const tB = new Date(b.time || b.published_at || b.date || 0).getTime();
       return tB - tA;
@@ -394,6 +389,7 @@
 
     scanForBreakingNews(allArticles);
     renderFeed();
+    renderDashboardStats(); // Auto-update dashboard right panel
   };
 
   // ═══════════════════════════════════════════════
@@ -401,7 +397,6 @@
   // ═══════════════════════════════════════════════
 
   const sourceConfig = {
-    hackernews: { label: 'HN', cssClass: 'hn' },
     devto: { label: 'Dev.to', cssClass: 'devto' },
     'ai-news': { label: 'TensorFeed', cssClass: 'ai' },
   };
@@ -657,26 +652,11 @@
     if (e.target === articleModalOverlay) closeArticleModal();
   });
 
-  // Dashboard modal triggers
-  const openDashboardModal = () => {
-    dashboardOverlay.classList.add('open');
-  };
-
-  const closeDashboardModal = () => {
-    dashboardOverlay.classList.remove('open');
-  };
-
-  dashboardClose.addEventListener('click', closeDashboardModal);
-  dashboardOverlay.addEventListener('click', (e) => {
-    if (e.target === dashboardOverlay) closeDashboardModal();
-  });
-
   // Global keydown listeners for escape
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeModal();
       closeArticleModal();
-      closeDashboardModal();
     }
   });
 
@@ -822,69 +802,17 @@
   };
 
   // ═══════════════════════════════════════════════
-  //  TREND ANALYSIS
+  //  RIGHT PANEL DASHBOARD RENDERER
   // ═══════════════════════════════════════════════
-
-  trendBtn.addEventListener('click', async () => {
-    openModal('📊 Trend Analysis');
-
-    const cacheKey = `trends_${todayKey()}`;
-    const cached = getFromCache(cacheKey, TREND_CACHE_TTL);
-    if (cached) {
-      showModalContent(formatSummary(cached.summary), cached.model);
-      return;
-    }
-
-    const headlines = allArticles
-      .slice(0, 10)
-      .map((a) => a.title || 'Untitled')
-      .join('\n');
-
-    if (!headlines) {
-      showModalError('No articles loaded yet. Please wait for feeds to load.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Trend Analysis',
-          content: headlines,
-          mode: 'trends',
-        }),
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      const summary = data.summary || data.text || data.result || 'No trends found.';
-      const model = data.model || 'gemini-2.5-flash';
-
-      setCache(cacheKey, { summary, model });
-      showModalContent(formatSummary(summary), model);
-    } catch (err) {
-      console.error('Trend analysis error:', err);
-      showModalError('Unable to generate trend analysis. Please try again later.');
-    }
-  });
-
-  // ═══════════════════════════════════════════════
-  //  DASHBOARD MODAL RENDERING
-  // ═══════════════════════════════════════════════
-
-  const openDashboard = () => {
-    openDashboardModal();
-
-    // 1. Gather stats
-    const totalFeedCount = allArticles.length;
-    const hnArticles = allArticles.filter(a => a.source === 'hackernews').length;
-    const devtoArticles = allArticles.filter(a => a.source === 'devto').length;
-    const aiArticles = allArticles.filter(a => a.source === 'ai-news').length;
-
-    const savedCount = getBookmarks().length;
+  
+  const renderDashboardStats = () => {
+    if (!dashboardBody) return;
+    
+    const devtoCount = allArticles.filter(a => a.source === 'devto').length;
+    const aiCount = allArticles.filter(a => a.source === 'ai-news').length;
     const generatedCount = devpulseArticles.length;
+    const bookmarkCount = getBookmarks().length;
+    const totalFeedCount = allArticles.length;
 
     // Aggregate tags
     const tagCounts = {};
@@ -902,57 +830,46 @@
       .slice(0, 8);
 
     // Calculate source percentages
-    const maxVal = Math.max(hnArticles, devtoArticles, aiArticles, 1);
-    const hnPct = Math.round((hnArticles / maxVal) * 100);
-    const devtoPct = Math.round((devtoArticles / maxVal) * 100);
-    const aiPct = Math.round((aiArticles / maxVal) * 100);
+    const maxVal = Math.max(devtoCount, aiCount, 1);
+    const devtoPct = Math.round((devtoCount / maxVal) * 100);
+    const aiPct = Math.round((aiCount / maxVal) * 100);
 
-    dashboardBody.innerHTML = `
+    dashboardBody.innerHTML = \`
       <div class="db-grid">
         <div class="db-card">
-          <div class="db-card-val">${totalFeedCount}</div>
+          <div class="db-card-val">\${totalFeedCount}</div>
           <div class="db-card-lbl">Feed Stories</div>
         </div>
         <div class="db-card">
-          <div class="db-card-val">${generatedCount}</div>
+          <div class="db-card-val">\${generatedCount}</div>
           <div class="db-card-lbl">AI Originals</div>
         </div>
         <div class="db-card">
-          <div class="db-card-val">${savedCount}</div>
+          <div class="db-card-val">\${bookmarkCount}</div>
           <div class="db-card-lbl">Bookmarked</div>
         </div>
       </div>
 
       <div class="db-section">
         <h4>📦 Feed Sources Density</h4>
-        
-        <div class="db-bar-item">
-          <div class="db-bar-lbls">
-            <span>HackerNews stories</span>
-            <span>${hnArticles} stories</span>
-          </div>
-          <div class="db-bar-track">
-            <div class="db-bar-fill" style="width: ${hnPct}%; background: var(--accent-cyan);"></div>
-          </div>
-        </div>
 
         <div class="db-bar-item">
           <div class="db-bar-lbls">
             <span>Dev.to articles</span>
-            <span>${devtoArticles} stories</span>
+            <span>\${devtoCount} stories</span>
           </div>
           <div class="db-bar-track">
-            <div class="db-bar-fill" style="width: ${devtoPct}%; background: var(--accent-purple);"></div>
+            <div class="db-bar-fill" style="width: \${devtoPct}%; background: var(--accent-purple);"></div>
           </div>
         </div>
 
         <div class="db-bar-item">
           <div class="db-bar-lbls">
             <span>TensorFeed AI news</span>
-            <span>${aiArticles} stories</span>
+            <span>\${aiCount} stories</span>
           </div>
           <div class="db-bar-track">
-            <div class="db-bar-fill" style="width: ${aiPct}%; background: var(--accent-pink);"></div>
+            <div class="db-bar-fill" style="width: \${aiPct}%; background: var(--accent-pink);"></div>
           </div>
         </div>
       </div>
@@ -960,8 +877,8 @@
       <div class="db-section">
         <h4>🏷️ Trending Topics Cloud</h4>
         <div class="db-tags-cloud">
-          ${topTags.length > 0
-            ? topTags.map(([tag, count]) => `<span class="db-tag">#${tag} (${count})</span>`).join('')
+          \${topTags.length > 0
+            ? topTags.map(([tag, count]) => \`<span class="db-tag">#\${tag} (\${count})</span>\`).join('')
             : '<span class="card-time">No trending tags detected yet.</span>'
           }
         </div>
@@ -974,10 +891,10 @@
           Models in rotation pool: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, llama-3.3-70b.
         </p>
       </div>
-    `;
+    \`;
   };
 
-  dashboardBtn.addEventListener('click', openDashboard);
+
 
   // ═══════════════════════════════════════════════
   //  MODEL STATUS

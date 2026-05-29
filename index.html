@@ -33,73 +33,76 @@
 </head>
 <body>
 
-  <!-- Futuristic Ambient Background Animations -->
-  <div class="ambient-blobs">
-    <div class="blob blob-1"></div>
-    <div class="blob blob-2"></div>
-    <div class="blob blob-3"></div>
-  </div>
-
-  <!-- ═══════════════ HEADER ═══════════════ -->
-  <header class="app-header">
-    <div class="header-inner">
+  <!-- ═══════════════ MAIN DASHBOARD LAYOUT ═══════════════ -->
+  <div class="dashboard-layout">
+    
+    <!-- Sidebar (Left) -->
+    <aside class="sidebar">
       <div class="header-brand">
         <div class="logo">
           <span class="logo-icon">⚡</span>
           <h1 class="logo-text">DevPulse</h1>
         </div>
-        <p class="subtitle">AI-Powered Developer Intelligence</p>
+        <p class="subtitle">AI Developer Intelligence</p>
       </div>
-      <div class="header-actions">
-        <button class="btn btn-trend" id="trend-btn" title="Daily Trends">
-          <span class="btn-icon">📊</span>
-          Trends
-        </button>
-        <button class="btn btn-dashboard" id="dashboard-btn" title="View Dashboard">
-          <span class="btn-icon">📈</span>
-          Dashboard
-        </button>
-        <button class="btn-icon-only" id="notification-btn" title="Notifications">
-          <span class="btn-icon">🔔</span>
-          <span class="notification-badge" id="notification-badge" style="display:none;"></span>
-        </button>
-        <button class="btn-icon-only" id="theme-btn" title="Change Theme">
-          <span class="btn-icon">🌙</span>
-        </button>
+
+      <nav class="sidebar-nav">
+        <h4 class="nav-heading">Feeds</h4>
+        <button class="filter-btn active" data-source="all"><span class="btn-icon">🌐</span> All News</button>
+        <button class="filter-btn" data-source="devto"><span class="btn-icon">💻</span> Dev.to</button>
+        <button class="filter-btn" data-source="ai-news"><span class="btn-icon">🧠</span> TensorFeed</button>
+        
+        <h4 class="nav-heading">Library</h4>
+        <button class="filter-btn" data-source="articles"><span class="btn-icon">📝</span> DevPulse Articles</button>
+        <button class="filter-btn" data-source="bookmarks"><span class="btn-icon">🔖</span> Saved</button>
+      </nav>
+
+      <div class="sidebar-footer">
         <div class="model-status" id="model-status">
           <span class="status-dot"></span>
           <span class="status-label">gemini-2.5-flash</span>
         </div>
+        <div class="header-actions">
+          <button class="btn-icon-only" id="notification-btn" title="Notifications">
+            <span class="btn-icon">🔔</span>
+            <span class="notification-badge" id="notification-badge" style="display:none;"></span>
+          </button>
+          <button class="btn-icon-only" id="theme-btn" title="Change Theme">
+            <span class="btn-icon">🌙</span>
+          </button>
+        </div>
       </div>
-    </div>
-  </header>
+    </aside>
 
-  <!-- ═══════════════ MAIN ═══════════════ -->
-  <main class="app-main">
-    <!-- Search Bar -->
-    <div class="search-container">
-      <div class="search-bar">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="Search articles, tags, authors... (Press '/' or 'Ctrl+K' to focus)" autocomplete="off">
-        <kbd class="search-kbd">/</kbd>
+    <!-- Main Content (Center) -->
+    <main class="app-main">
+      <!-- Search Bar -->
+      <div class="search-container">
+        <div class="search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Search articles, tags, authors... (Press '/' or 'Ctrl+K')" autocomplete="off">
+          <kbd class="search-kbd">/</kbd>
+        </div>
       </div>
-    </div>
 
-    <div class="feed-filters">
-      <button class="filter-btn active" data-source="all">All</button>
-      <button class="filter-btn" data-source="hackernews">HackerNews</button>
-      <button class="filter-btn" data-source="devto">Dev.to</button>
-      <button class="filter-btn" data-source="ai-news">AI News</button>
-      <button class="filter-btn" data-source="articles">📝 DevPulse Articles</button>
-      <button class="filter-btn" data-source="bookmarks">🔖 Saved</button>
-    </div>
+      <div class="feed-container masonry-grid" id="feed">
+        <!-- Cards rendered by JS -->
+      </div>
+    </main>
 
-    <div class="feed-container" id="feed">
-      <!-- Cards rendered by JS -->
-    </div>
-  </main>
+    <!-- Right Panel (Stats & Trends) -->
+    <aside class="right-panel">
+      <div class="panel-section">
+        <h3 class="panel-title"><span class="btn-icon">📈</span> Dashboard Stats</h3>
+        <div id="dashboard-body" class="dashboard-stats-container">
+          <!-- Stats rendered by JS -->
+        </div>
+      </div>
+    </aside>
 
-  <!-- ═══════════════ AI SUMMARY MODAL ═══════════════ -->
+  </div>
+
+  <!-- ═══════════════ MODALS ═══════════════ -->
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal">
       <div class="modal-header">
@@ -115,7 +118,6 @@
     </div>
   </div>
 
-  <!-- ═══════════════ DEVPULSE ARTICLE READER MODAL ═══════════════ -->
   <div class="modal-overlay" id="article-modal-overlay">
     <div class="modal article-reader-modal">
       <div class="article-reader-header">
@@ -137,19 +139,6 @@
       <div class="article-reader-footer">
         <a id="article-source-link" href="#" target="_blank" rel="noopener noreferrer">View Original Source →</a>
         <span class="model-badge" id="article-model-badge"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════ DASHBOARD MODAL ═══════════════ -->
-  <div class="modal-overlay" id="dashboard-overlay">
-    <div class="modal dashboard-modal">
-      <div class="modal-header">
-        <h3>📊 DevPulse Premium Dashboard</h3>
-        <button class="modal-close" id="dashboard-close">&times;</button>
-      </div>
-      <div class="modal-body" id="dashboard-body">
-        <!-- Statistics cards rendered by JS -->
       </div>
     </div>
   </div>

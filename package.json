@@ -4,7 +4,8 @@
   "description": "AI-powered developer intelligence feed",
   "private": true,
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "cheerio": "^1.2.0"
   },
   "engines": {
     "node": ">=18.0.0"

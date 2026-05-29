@@ -67,45 +67,52 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-// Simple web scraper to extract cover image and description
+import * as cheerio from "cheerio";
+
+// Simple web scraper to extract cover image and description using cheerio
 async function scrapeMetadata(url) {
-  const result = { coverImage: "", description: "" };
+  const result = { coverImage: "", description: "", textContent: "" };
   if (!url || url === "#") return result;
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000); // 3-second limit
+    const timeout = setTimeout(() => controller.abort(), 8000); // 8-second limit
 
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DevPulseBot/1.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DevPulseBot/1.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
       }
     });
     clearTimeout(timeout);
 
     if (!res.ok) return result;
     const html = await res.text();
+    const $ = cheerio.load(html);
 
     // Extract Open Graph image
-    const ogImageMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-                        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    if (ogImageMatch && ogImageMatch[1]) {
-      result.coverImage = ogImageMatch[1];
-    } else {
-      // Fallback: twitter image
-      const twitterImageMatch = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-      if (twitterImageMatch && twitterImageMatch[1]) {
-        result.coverImage = twitterImageMatch[1];
-      }
-    }
+    result.coverImage = $('meta[property="og:image"]').attr('content') ||
+                        $('meta[name="twitter:image"]').attr('content') || "";
 
     // Extract Meta description
-    const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
-                      html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
-    if (descMatch && descMatch[1]) {
-      result.description = descMatch[1];
+    result.description = $('meta[name="description"]').attr('content') ||
+                         $('meta[property="og:description"]').attr('content') || "";
+
+    // Extract raw text content for AI to read
+    $('script, style, noscript, iframe, nav, footer, header').remove();
+    let textBody = '';
+    $('article p, main p, .post-content p, .article-content p').each((_, el) => {
+      textBody += $(el).text() + '\n\n';
+    });
+
+    // Fallback if no specific article paragraphs found
+    if (textBody.length < 200) {
+      textBody = $('body').text().replace(/\s+/g, ' ');
     }
+
+    // Limit text to ~20k characters to fit within context windows safely
+    result.textContent = textBody.slice(0, 20000);
 
   } catch (err) {
     console.warn("Failed to scrape metadata for URL:", url, err.message);
@@ -114,22 +121,42 @@ async function scrapeMetadata(url) {
   return result;
 }
 
-async function generateAIArticle(title, url, scrapedDesc) {
-  const prompt = `You are a high-profile technology journalist writing for DevPulse.
-Create a fully detailed, engaging, and professional 400-600 word technical article about:
-Topic: "${title}"
-URL: ${url}
-Context Info: ${scrapedDesc || "Developer breaking news"}
+// Fetch Dev.to article natively
+async function fetchNativeDevToArticle(url) {
+  try {
+    const apiRes = await fetch(`https://dev.to/api/articles/find?url=${encodeURIComponent(url)}`);
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      return {
+        content: data.body_markdown || data.description,
+        coverImage: data.cover_image || data.social_image || "",
+        model: "Native Dev.to Source"
+      };
+    }
+  } catch (e) {
+    console.warn("Native Dev.to fetch failed:", e.message);
+  }
+  return null;
+}
+
+async function generateAIArticle(title, url, scrapedDesc, scrapedContent) {
+  const prompt = \`You are a high-profile technology journalist writing for DevPulse.
+Create a fully detailed, engaging, and professional technical article about:
+Topic: "\${title}"
+URL: \${url}
+Context Description: \${scrapedDesc || "Developer breaking news"}
+
+Here is the extracted raw content from the source page. Use this as your primary factual basis. Summarize and structure it beautifully. DO NOT hallucinate facts not present here.
+RAW CONTENT:
+\${scrapedContent}
+---
 
 Requirements:
 - Structure with clear ## Markdown Headers.
 - Start with a compelling bold introduction about "Why it matters".
-- Explain the key mechanics, features, or architecture details.
+- Explain the key mechanics, features, or architecture details found in the raw content.
 - Provide a dedicated "Developer Impact" section explaining how this affects workflows, tools, or best practices.
-- Use a code snippet, bullet lists, or tables if helpful to convey dev points.
-- Do not repeat yourself. Write in a premium, engaging editorial tone.
-
-Output the article in Markdown format. Do not add introductory conversational text like "Here is your article:". Just return the Markdown itself.`;
+- Output the article in Markdown format. Do not add introductory conversational text like "Here is your article:". Just return the Markdown itself.\`;
 
   let resultText = null;
   let usedModel = null;
@@ -146,13 +173,13 @@ Output the article in Markdown format. Do not add introductory conversational te
         if (!apiKey) continue;
         keyManager.incrementRequest(keyIndex);
 
-        const apiUr = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${apiKey}`;
+        const apiUr = \`https://generativelanguage.googleapis.com/v1beta/models/\${model.id}:generateContent?key=\${apiKey}\`;
         const res = await fetch(apiUr, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 1500, temperature: 0.3 }
+            generationConfig: { maxOutputTokens: 2500, temperature: 0.3 }
           })
         });
 
@@ -176,12 +203,12 @@ Output the article in Markdown format. Do not add introductory conversational te
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
+            Authorization: \`Bearer \${apiKey}\`,
           },
           body: JSON.stringify({
             model: model.id,
             messages: [{ role: "user", content: prompt }],
-            max_tokens: 1500,
+            max_tokens: 2500,
             temperature: 0.3,
           })
         });
@@ -194,7 +221,7 @@ Output the article in Markdown format. Do not add introductory conversational te
         }
       }
     } catch (e) {
-      console.error(`Attempt with ${model.id} failed:`, e);
+      console.error(\`Attempt with \${model.id} failed:\`, e);
     }
   }
 
@@ -211,47 +238,66 @@ export default async (req) => {
   }
 
   try {
-    const { title, url, source = "hackernews", tags = [] } = await req.json();
+    const { title, url, source = "unknown", tags = [] } = await req.json();
     if (!title) {
       return new Response(JSON.stringify({ error: "Missing title" }), { status: 400, headers: corsHeaders });
     }
 
-    // 1. Scrape original page
-    const metadata = await scrapeMetadata(url);
+    let finalContent = null;
+    let finalModel = null;
+    let finalCoverImage = "";
+    
+    // 1. If it's a dev.to article, natively fetch its exact content
+    const isDevTo = source === "devto" || url.includes("dev.to");
+    if (isDevTo) {
+      const nativeData = await fetchNativeDevToArticle(url);
+      if (nativeData && nativeData.content) {
+        finalContent = nativeData.content;
+        finalModel = nativeData.model;
+        finalCoverImage = nativeData.coverImage;
+      }
+    }
 
-    // 2. Generate original DevPulse Article via AI
-    const { content, model } = await generateAIArticle(title, url, metadata.description);
+    // 2. If no native content yet, scrape and use AI
+    if (!finalContent) {
+      const metadata = await scrapeMetadata(url);
+      const aiResult = await generateAIArticle(title, url, metadata.description, metadata.textContent);
+      
+      finalContent = aiResult.content;
+      finalModel = aiResult.model;
+      finalCoverImage = metadata.coverImage;
+    }
 
-    if (!content) {
-      return new Response(JSON.stringify({ error: "AI generation failed across all models." }), { status: 502, headers: corsHeaders });
+    if (!finalContent) {
+      return new Response(JSON.stringify({ error: "Content generation failed." }), { status: 502, headers: corsHeaders });
     }
 
     // Generate unique ID
-    const articleId = `dp-${Date.now()}`;
+    const articleId = \`dp-\${Date.now()}\`;
     const generatedAt = new Date().toISOString();
 
     // Word count / read time
-    const words = content.split(/\s+/).length;
+    const words = finalContent.split(/\\s+/).length;
     const readTime = Math.max(1, Math.round(words / 200));
 
     // Excerpt: first 160 chars from the content (strip markdown)
-    const excerpt = content
-      .replace(/[#*`_-]/g, "")
-      .replace(/\s+/g, " ")
+    const excerpt = finalContent
+      .replace(/[#*\`_-]/g, "")
+      .replace(/\\s+/g, " ")
       .slice(0, 160)
       .trim() + "...";
 
     const articleData = {
       id: articleId,
       title,
-      content,
+      content: finalContent,
       excerpt,
-      coverImage: metadata.coverImage || "",
+      coverImage: finalCoverImage || "",
       sourceUrl: url,
       sourceTitle: title,
       source,
       tags,
-      model: model || "unknown",
+      model: finalModel || "unknown",
       generatedAt,
       readTime
     };
