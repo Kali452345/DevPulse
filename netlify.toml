@@ -27,6 +27,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/generate-article"
+  to = "/.netlify/functions/generate-article"
+  status = 200
+
+[[redirects]]
+  from = "/api/articles"
+  to = "/.netlify/functions/articles"
+  status = 200
+
+[[redirects]]
   from = "/api/status"
   to = "/.netlify/functions/status"
   status = 200

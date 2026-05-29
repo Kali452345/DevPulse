@@ -1,6 +1,55 @@
 // summarize.mjs — AI Model Router (Netlify Function)
-// Routes summarization/trend requests through a round-robin of Gemini models
-// with Groq fallback. Includes 1-hour response cache and CORS headers.
+// Routes summarization/trend/article requests through a round-robin of Gemini models
+// with Groq fallback. Includes 1-hour response cache, CORS headers, and multi-key rotation.
+
+// ── Key Manager for multi-key Gemini API key rotation ──────────────
+class KeyManager {
+  constructor() {
+    this.keys = (process.env.GEMINI_API_KEY || "").split(",").map(k => k.trim()).filter(Boolean);
+    this.keyStates = this.keys.map(() => ({
+      cooldownUntil: 0,
+      requestCount: 0,
+      windowStart: Date.now()
+    }));
+    this.currentIndex = 0;
+  }
+
+  getAvailableKey() {
+    if (this.keys.length === 0) return { key: null, index: -1 };
+    const now = Date.now();
+    for (let i = 0; i < this.keys.length; i++) {
+      const idx = (this.currentIndex + i) % this.keys.length;
+      const state = this.keyStates[idx];
+      // Reset rate limit window if 1 min passed
+      if (now - state.windowStart > 60000) {
+        state.requestCount = 0;
+        state.windowStart = now;
+      }
+      // Gemini Flash has 15 RPM limit on free tier. Let's cap at 14 per key to be safe.
+      if (now >= state.cooldownUntil && state.requestCount < 14) {
+        this.currentIndex = idx;
+        return { key: this.keys[idx], index: idx };
+      }
+    }
+    // If all keys are rate limited, return the current index (will either succeed or trigger 429)
+    return { key: this.keys[this.currentIndex], index: this.currentIndex };
+  }
+
+  handle429(index) {
+    if (index >= 0 && index < this.keyStates.length) {
+      this.keyStates[index].cooldownUntil = Date.now() + 60000; // 60s cooldown
+    }
+  }
+
+  incrementRequest(index) {
+    if (index >= 0 && index < this.keyStates.length) {
+      this.keyStates[index].requestCount++;
+    }
+  }
+}
+
+// Global instance (persists during container warm state)
+const keyManager = new KeyManager();
 
 // ── Model rotation pool ────────────────────────────────────────────
 const MODELS = [
@@ -39,6 +88,26 @@ ${content}
 Trend Analysis:`;
   }
 
+  if (mode === "article") {
+    return `You are a technical journalist writing for DevPulse, a premium developer publication. 
+Write a high-quality, engaging, and original developer article based on the following news:
+Title: ${title}
+Source URL: ${url}
+Context Summary: ${content || "Developer interest news."}
+
+Your article must:
+1. Be original, professional, and insightful (400-600 words). Do not copy source text directly; rewrite it from a developer's perspective.
+2. Include sections:
+   - A bold hook introduction (Why this matters)
+   - Deep dive details (Technical mechanics/key concepts)
+   - Developer Impact (Practical takeaways, how it changes tools/workflows)
+   - Summary/Conclusion
+3. Format beautifully in Markdown (use headers ##, bold texts, lists, and code blocks if applicable).
+4. Do not include any meta comments, just output the markdown article.
+
+Write the article:`;
+  }
+
   // Default: summarize
   return `You are a concise tech news summarizer. Given the following article title and URL, provide a 2-3 sentence TL;DR summary that captures the key points. Be specific and informative, not generic.
 
@@ -51,65 +120,80 @@ TL;DR:`;
 // ── API callers ────────────────────────────────────────────────────
 
 /**
- * Call a Google Gemini model via the generateContent endpoint.
+ * Call a Google Gemini model via the generateContent endpoint using the key manager's rotated key.
  * Returns { text, status }.
  */
-async function callGemini(modelId, prompt) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+async function callGemini(modelId, prompt, maxTokens = 250) {
+  const { key: apiKey, index: keyIndex } = keyManager.getAvailableKey();
+  if (!apiKey) throw new Error("No GEMINI_API_KEY is configured.");
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        maxOutputTokens: 200,
-        temperature: 0.3,
-      },
-    }),
-  });
+  keyManager.incrementRequest(keyIndex);
 
-  if (!res.ok) {
-    return { text: null, status: res.status };
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature: 0.3,
+        },
+      }),
+    });
+
+    if (res.status === 429) {
+      keyManager.handle429(keyIndex);
+      return { text: null, status: 429 };
+    }
+
+    if (!res.ok) {
+      return { text: null, status: res.status };
+    }
+
+    const json = await res.json();
+    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+    return { text, status: res.status };
+  } catch (err) {
+    return { text: null, status: 500 };
   }
-
-  const json = await res.json();
-  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
-  return { text, status: res.status };
 }
 
 /**
  * Call a Groq model via the OpenAI-compatible chat completions endpoint.
  * Returns { text, status }.
  */
-async function callGroq(modelId, prompt) {
+async function callGroq(modelId, prompt, maxTokens = 250) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY not set");
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: modelId,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 200,
-      temperature: 0.3,
-    }),
-  });
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.3,
+      }),
+    });
 
-  if (!res.ok) {
-    return { text: null, status: res.status };
+    if (!res.ok) {
+      return { text: null, status: res.status };
+    }
+
+    const json = await res.json();
+    const text = json?.choices?.[0]?.message?.content ?? null;
+    return { text, status: res.status };
+  } catch {
+    return { text: null, status: 500 };
   }
-
-  const json = await res.json();
-  const text = json?.choices?.[0]?.message?.content ?? null;
-  return { text, status: res.status };
 }
 
 // ── Model selection helpers ────────────────────────────────────────
@@ -178,12 +262,11 @@ export default async (req) => {
 
     // ── Build prompt ────────────────────────────────────────────────
     const prompt = buildPrompt(mode, title, url, content);
+    const maxTokens = mode === "article" ? 1500 : 250;
 
     // ── Try models in rotation order ────────────────────────────────
-    // We'll attempt up to MODELS.length times to find a working model.
     let resultText = null;
     let usedModel = null;
-    const startIdx = modelIndex;
 
     // Skip pro on initial pick if necessary
     if (shouldSkipPro(modelIndex)) {
@@ -196,8 +279,8 @@ export default async (req) => {
       try {
         const { text, status } =
           model.provider === "gemini"
-            ? await callGemini(model.id, prompt)
-            : await callGroq(model.id, prompt);
+            ? await callGemini(model.id, prompt, maxTokens)
+            : await callGroq(model.id, prompt, maxTokens);
 
         if (status === 429 || text === null) {
           // Rate-limited or empty — try the next model
@@ -245,3 +328,4 @@ export default async (req) => {
 
 // Netlify Functions v2 config
 export const config = { path: "/api/summarize", method: "POST" };
+export { keyManager };

@@ -17,9 +17,36 @@
   const toastContainer = document.getElementById('toast-container');
   const filterBtns = document.querySelectorAll('.filter-btn');
 
+  // NEW DOM References
+  const searchInput = document.getElementById('search-input');
+  const themeBtn = document.getElementById('theme-btn');
+  const notificationBtn = document.getElementById('notification-btn');
+  const notificationBadge = document.getElementById('notification-badge');
+  const dashboardBtn = document.getElementById('dashboard-btn');
+  const dashboardOverlay = document.getElementById('dashboard-overlay');
+  const dashboardClose = document.getElementById('dashboard-close');
+  const dashboardBody = document.getElementById('dashboard-body');
+
+  const articleModalOverlay = document.getElementById('article-modal-overlay');
+  const articleModalClose = document.getElementById('article-modal-close');
+  const articleCover = document.getElementById('article-cover');
+  const articleCoverContainer = document.getElementById('article-cover-container');
+  const articleSourceBadge = document.getElementById('article-source-badge');
+  const articleReadtime = document.getElementById('article-readtime');
+  const articleDate = document.getElementById('article-date');
+  const articleReaderTitle = document.getElementById('article-reader-title');
+  const articleReaderBody = document.getElementById('article-reader-body');
+  const articleSourceLink = document.getElementById('article-source-link');
+  const articleModelBadge = document.getElementById('article-model-badge');
+
   // ─── State ───
-  let allArticles = [];
+  let allArticles = []; // News feed articles
+  let devpulseArticles = []; // AI written articles loaded from backend Netlify Blobs
   let activeFilter = 'all';
+  let searchQuery = '';
+  let themeMode = localStorage.getItem('devpulse-theme') || 'dark'; // dark, light, system
+  let notificationsEnabled = localStorage.getItem('devpulse-notifications') === 'true';
+
   const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
   const SUMMARY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
   const TREND_CACHE_TTL = 60 * 60 * 1000; // 1 hour
@@ -28,7 +55,6 @@
   //  HELPERS
   // ═══════════════════════════════════════════════
 
-  /** Convert ISO date string to relative time (e.g. '2h ago') */
   const timeAgo = (dateString) => {
     if (!dateString) return '';
     const now = Date.now();
@@ -52,7 +78,6 @@
     return `${months}mo ago`;
   };
 
-  /** Format large numbers (e.g. 1500 → '1.5k') */
   const formatNumber = (n) => {
     if (n == null) return '0';
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -60,7 +85,6 @@
     return String(n);
   };
 
-  /** Get from localStorage with TTL check */
   const getFromCache = (key, maxAgeMs) => {
     try {
       const raw = localStorage.getItem(key);
@@ -76,17 +100,57 @@
     }
   };
 
-  /** Store data with timestamp in localStorage */
   const setCache = (key, data) => {
     try {
       localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-    } catch {
-      // Storage full — silently fail
-    }
+    } catch {}
   };
 
-  /** Get today's date as YYYY-MM-DD */
   const todayKey = () => new Date().toISOString().slice(0, 10);
+
+  // Simple Markdown Parser to render generated articles cleanly
+  const parseMarkdown = (markdown) => {
+    if (!markdown) return '';
+    let html = markdown;
+
+    // Convert code blocks ```js ... ```
+    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+      return `<pre><code>${code.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+    });
+
+    // Convert inline code `code`
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Convert headers ## Heading
+    html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+
+    // Convert lists
+    html = html.replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>');
+    // Wrap consecutive <li> tags in <ul>
+    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+    // Clean up double ul tags
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // Convert bold **text**
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // Convert italics *text*
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // Convert paragraphs (split by double newline, wrapping non-HTML lines)
+    const paragraphs = html.split(/\n{2,}/);
+    html = paragraphs.map(p => {
+      p = p.trim();
+      if (!p) return '';
+      if (p.startsWith('<h') || p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol')) {
+        return p;
+      }
+      return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+    }).join('');
+
+    return html;
+  };
 
   // ═══════════════════════════════════════════════
   //  TOAST NOTIFICATIONS
@@ -98,6 +162,174 @@
     toast.textContent = message;
     toastContainer.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
+  };
+
+  // ═══════════════════════════════════════════════
+  //  THEME MANAGER
+  // ═══════════════════════════════════════════════
+
+  const applyTheme = (theme) => {
+    const root = document.documentElement;
+    const themeIcon = themeBtn.querySelector('.btn-icon');
+
+    if (theme === 'light') {
+      root.setAttribute('data-theme', 'light');
+      themeIcon.textContent = '☀️';
+    } else if (theme === 'dark') {
+      root.removeAttribute('data-theme');
+      themeIcon.textContent = '🌙';
+    } else {
+      // System
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (isDark) {
+        root.removeAttribute('data-theme');
+      } else {
+        root.setAttribute('data-theme', 'light');
+      }
+      themeIcon.textContent = '💻';
+    }
+  };
+
+  themeBtn.addEventListener('click', () => {
+    if (themeMode === 'dark') {
+      themeMode = 'light';
+    } else if (themeMode === 'light') {
+      themeMode = 'system';
+    } else {
+      themeMode = 'dark';
+    }
+    localStorage.setItem('devpulse-theme', themeMode);
+    applyTheme(themeMode);
+    showToast(`Theme switched to: ${themeMode}`, 'success');
+  });
+
+  // Listen to system theme changes if set to system
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (themeMode === 'system') {
+      applyTheme('system');
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  //  BOOKMARKS MANAGER
+  // ═══════════════════════════════════════════════
+
+  const getBookmarks = () => {
+    try {
+      return JSON.parse(localStorage.getItem('devpulse-bookmarks')) || [];
+    } catch {
+      return [];
+    }
+  };
+
+  const isBookmarked = (articleId) => {
+    const bookmarks = getBookmarks();
+    return bookmarks.some(b => b.id === articleId || b.url === articleId);
+  };
+
+  const toggleBookmark = (article, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    let bookmarks = getBookmarks();
+    const id = article.id || article.url;
+
+    if (isBookmarked(id)) {
+      bookmarks = bookmarks.filter(b => b.id !== id && b.url !== id);
+      localStorage.setItem('devpulse-bookmarks', JSON.stringify(bookmarks));
+      showToast('Removed from Saved bookmarks', 'success');
+    } else {
+      bookmarks.push(article);
+      localStorage.setItem('devpulse-bookmarks', JSON.stringify(bookmarks));
+      showToast('Saved to Bookmarks', 'success');
+    }
+
+    // Refresh UI
+    if (activeFilter === 'bookmarks') {
+      renderFeed();
+    } else {
+      // Re-render current feed to update icons
+      renderFeed();
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  DESKTOP NOTIFICATIONS
+  // ═══════════════════════════════════════════════
+
+  const checkNotificationPermission = async () => {
+    if (!('Notification' in window)) return false;
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission !== 'denied') {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    }
+    return false;
+  };
+
+  notificationBtn.addEventListener('click', async () => {
+    notificationsEnabled = !notificationsEnabled;
+    localStorage.setItem('devpulse-notifications', notificationsEnabled);
+
+    if (notificationsEnabled) {
+      const allowed = await checkNotificationPermission();
+      if (allowed) {
+        showToast('Desktop notifications enabled!', 'success');
+        notificationBtn.querySelector('.btn-icon').textContent = '🔔';
+        notificationBadge.style.display = 'none';
+      } else {
+        notificationsEnabled = false;
+        localStorage.setItem('devpulse-notifications', 'false');
+        showToast('Notification permission denied by browser.');
+      }
+    } else {
+      showToast('Notifications disabled.');
+      notificationBtn.querySelector('.btn-icon').textContent = '🔕';
+      notificationBadge.style.display = 'none';
+    }
+  });
+
+  const triggerDesktopNotification = (title, body, url) => {
+    if (!notificationsEnabled || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(`⚡ DevPulse Breaking: ${title}`, {
+        body: body,
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">⚡</text></svg>'
+      });
+      n.onclick = () => {
+        window.open(url, '_blank');
+        n.close();
+      };
+    } catch (e) {
+      console.warn("Desktop notifications not supported in this environment:", e);
+    }
+  };
+
+  const scanForBreakingNews = (articles) => {
+    const notified = JSON.parse(localStorage.getItem('devpulse-notified-ids')) || [];
+    let foundNewBreaking = false;
+
+    articles.forEach(art => {
+      const id = art.id || art.url;
+      const points = art.points || art.score || art.positive_reactions_count || 0;
+
+      // Breaking if HN has > 400 points or Dev.to has > 150 likes
+      const isHnBreaking = art.source === 'hackernews' && points > 400;
+      const isDevToBreaking = art.source === 'devto' && points > 150;
+
+      if ((isHnBreaking || isDevToBreaking) && !notified.includes(id)) {
+        notified.push(id);
+        triggerDesktopNotification(art.title, `Viral on ${art.source} with ${points} points! Read now.`, art.url || art.link);
+        foundNewBreaking = true;
+      }
+    });
+
+    localStorage.setItem('devpulse-notified-ids', JSON.stringify(notified));
+
+    if (foundNewBreaking && !notificationsEnabled) {
+      notificationBadge.style.display = 'block';
+    }
   };
 
   // ═══════════════════════════════════════════════
@@ -124,12 +356,23 @@
       const res = await fetch(endpoint);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      // Normalise: ensure each article has a .source field
       return (data.articles || data || []).map((a) => ({ ...a, source }));
     } catch (err) {
       console.warn(`Failed to fetch ${source}:`, err);
       showToast(`Unable to load ${source}`);
       return [];
+    }
+  };
+
+  const fetchArticles = async () => {
+    try {
+      const res = await fetch('/api/articles');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      devpulseArticles = data.articles || [];
+    } catch (err) {
+      console.warn('Failed to load DevPulse articles from Netlify Blobs:', err);
+      showToast('Unable to load premium generated articles');
     }
   };
 
@@ -140,6 +383,7 @@
       fetchFeed('/api/hn', 'hackernews'),
       fetchFeed('/api/devto', 'devto'),
       fetchFeed('/api/ai-news', 'ai-news'),
+      fetchArticles() // Pre-fetch DevPulse Original articles in background
     ]);
 
     allArticles = [...hn, ...devto, ...ai].sort((a, b) => {
@@ -148,6 +392,7 @@
       return tB - tA;
     });
 
+    scanForBreakingNews(allArticles);
     renderFeed();
   };
 
@@ -162,12 +407,86 @@
   };
 
   const renderFeed = () => {
-    const filtered = activeFilter === 'all'
-      ? allArticles
-      : allArticles.filter((a) => a.source === activeFilter);
+    feedEl.innerHTML = '';
+
+    // A. DEVPULSE PREMIUM ARTICLES VIEW
+    if (activeFilter === 'articles') {
+      const filtered = devpulseArticles.filter(art => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return art.title.toLowerCase().includes(q) ||
+               art.excerpt.toLowerCase().includes(q) ||
+               (art.tags && art.tags.some(t => t.toLowerCase().includes(q)));
+      });
+
+      if (filtered.length === 0) {
+        feedEl.innerHTML = `<div class="feed-error">No premium generated articles found. Search matches nothing or none have been generated yet!</div>`;
+        return;
+      }
+
+      feedEl.innerHTML = filtered.map((article, i) => {
+        const coverImg = article.coverImage
+          ? `<img class="article-card-cover" src="${article.coverImage}" alt="${article.title}" loading="lazy">`
+          : `<div class="article-card-placeholder">📝</div>`;
+
+        const dateStr = article.generatedAt ? new Date(article.generatedAt).toLocaleDateString() : '';
+
+        return `
+          <div class="article-card" style="animation-delay:${i * 50}ms">
+            <div class="article-card-cover-container">
+              ${coverImg}
+            </div>
+            <div class="article-card-body">
+              <div>
+                <div class="article-card-meta">
+                  <span class="article-original-badge">DevPulse Original</span>
+                  <span>${article.readTime || 2} min read • ${dateStr}</span>
+                </div>
+                <h3 class="article-card-title">${article.title}</h3>
+                <p class="article-card-excerpt">${article.excerpt}</p>
+              </div>
+              <div class="article-card-bottom">
+                <button class="btn btn-trend read-article-btn" data-id="${article.id}">
+                  📖 Read Full Article
+                </button>
+                <span class="model-badge">⚡ ${article.model || 'gemini-2.5-flash'}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Attach article reading click handlers
+      feedEl.querySelectorAll('.read-article-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          openArticleReader(id);
+        });
+      });
+
+      return;
+    }
+
+    // B. BOOKMARKS/SAVED VIEW
+    let feedSource = allArticles;
+    if (activeFilter === 'bookmarks') {
+      feedSource = getBookmarks();
+    } else if (activeFilter !== 'all') {
+      feedSource = allArticles.filter((a) => a.source === activeFilter);
+    }
+
+    // Apply Search Query filtering
+    const filtered = feedSource.filter(art => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      const titleMatch = (art.title || '').toLowerCase().includes(q);
+      const authorMatch = (art.author || art.by || '').toLowerCase().includes(q);
+      const tagMatch = art.tags && art.tags.some(t => t.toLowerCase().includes(q));
+      return titleMatch || authorMatch || tagMatch;
+    });
 
     if (filtered.length === 0) {
-      feedEl.innerHTML = `<div class="feed-error">No articles found. Try refreshing or selecting a different filter.</div>`;
+      feedEl.innerHTML = `<div class="feed-error">No articles found matching your query. Try clearing your search or filter.</div>`;
       return;
     }
 
@@ -180,10 +499,13 @@
       const points = article.points || article.score || article.positive_reactions_count || 0;
       const comments = article.comments_count ?? article.descendants ?? article.num_comments ?? 0;
       const tags = article.tags || article.tag_list || [];
+      const artId = article.id || article.url;
 
       const tagsHtml = Array.isArray(tags) && tags.length
         ? `<div class="card-tags">${tags.slice(0, 4).map((t) => `<span class="tag">#${t}</span>`).join('')}</div>`
         : '';
+
+      const isBooked = isBookmarked(artId);
 
       return `
         <article class="feed-card" data-source="${article.source}" style="animation-delay:${i * 50}ms">
@@ -192,7 +514,12 @@
               <span class="source-badge ${src.cssClass}">${src.label}</span>
               ${author ? `<span class="card-author">by <strong>${author}</strong></span>` : ''}
             </div>
-            <span class="card-time">${timeAgo(dateStr)}</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="card-time">${timeAgo(dateStr)}</span>
+              <button class="bookmark-btn ${isBooked ? 'active' : ''}" data-index="${i}" title="${isBooked ? 'Unsave Bookmark' : 'Save Bookmark'}">
+                ${isBooked ? '🔖' : 'bookmark_border'}
+              </button>
+            </div>
           </div>
           <h2 class="card-title"><a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a></h2>
           ${tagsHtml}
@@ -201,14 +528,19 @@
               <span class="stat"><span class="stat-icon">▲</span> ${formatNumber(points)}</span>
               <span class="stat"><span class="stat-icon">💬</span> ${formatNumber(comments)}</span>
             </div>
-            <button class="btn-summarize" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}">
-              <span class="sparkle">✨</span> Summarize
-            </button>
+            <div style="display:flex; gap:8px;">
+              <button class="btn-summarize" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}">
+                <span class="sparkle">✨</span> Summarize
+              </button>
+              <button class="btn-generate" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}" data-source="${article.source}" data-tags="${tags.join(',')}">
+                <span class="sparkle">✍️</span> Generate Article
+              </button>
+            </div>
           </div>
         </article>`;
     }).join('');
 
-    // Attach summarize listeners
+    // Attach summarize and bookmarks click listeners
     feedEl.querySelectorAll('.btn-summarize').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = btn.getAttribute('data-title');
@@ -216,7 +548,49 @@
         handleSummarize(t, u);
       });
     });
+
+    feedEl.querySelectorAll('.btn-generate').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const title = btn.getAttribute('data-title');
+        const url = btn.getAttribute('data-url');
+        const src = btn.getAttribute('data-source');
+        const tags = btn.getAttribute('data-tags').split(',').filter(Boolean);
+        handleGenerate(title, url, src, tags, btn);
+      });
+    });
+
+    feedEl.querySelectorAll('.bookmark-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(btn.getAttribute('data-index'), 10);
+        const article = filtered[idx];
+        toggleBookmark(article, e);
+      });
+    });
   };
+
+  // ─── Search input real-time handler ───
+  searchInput.addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    renderFeed();
+  });
+
+  // Short-cut handlers (Ctrl+K or '/' to focus search)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    } else if (e.key === 'Escape' && document.activeElement === searchInput) {
+      searchInput.value = '';
+      searchQuery = '';
+      searchInput.blur();
+      renderFeed();
+    }
+  });
 
   // ═══════════════════════════════════════════════
   //  FILTER BUTTONS
@@ -227,12 +601,17 @@
       filterBtns.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       activeFilter = btn.dataset.source;
-      renderFeed();
+
+      if (activeFilter === 'articles') {
+        fetchArticles().then(renderFeed);
+      } else {
+        renderFeed();
+      }
     });
   });
 
   // ═══════════════════════════════════════════════
-  //  MODAL
+  //  MODALS OPEN & CLOSE
   // ═══════════════════════════════════════════════
 
   const openModal = (title = 'AI Summary') => {
@@ -250,19 +629,51 @@
   modalOverlay.addEventListener('click', (e) => {
     if (e.target === modalOverlay) closeModal();
   });
+
+  // Article Reader Modal triggers
+  const openArticleModal = () => {
+    articleReaderBody.innerHTML = `<div class="loading-dots"><span></span><span></span><span></span></div>`;
+    articleModalOverlay.classList.add('open');
+  };
+
+  const closeArticleModal = () => {
+    articleModalOverlay.classList.remove('open');
+  };
+
+  articleModalClose.addEventListener('click', closeArticleModal);
+  articleModalOverlay.addEventListener('click', (e) => {
+    if (e.target === articleModalOverlay) closeArticleModal();
+  });
+
+  // Dashboard modal triggers
+  const openDashboardModal = () => {
+    dashboardOverlay.classList.add('open');
+  };
+
+  const closeDashboardModal = () => {
+    dashboardOverlay.classList.remove('open');
+  };
+
+  dashboardClose.addEventListener('click', closeDashboardModal);
+  dashboardOverlay.addEventListener('click', (e) => {
+    if (e.target === dashboardOverlay) closeDashboardModal();
+  });
+
+  // Global keydown listeners for escape
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+      closeModal();
+      closeArticleModal();
+      closeDashboardModal();
+    }
   });
 
   const showModalContent = (html, model = '') => {
     modalBody.innerHTML = html;
     if (model) {
       modalModel.textContent = `⚡ ${model}`;
-      // Sync header status indicator
       const label = modelStatus.querySelector('.status-label');
-      if (label) {
-        label.textContent = model;
-      }
+      if (label) label.textContent = model;
     }
   };
 
@@ -277,7 +688,6 @@
   const handleSummarize = async (title, url) => {
     openModal(title);
 
-    // Check cache
     const cacheKey = `summary_${title}`;
     const cached = getFromCache(cacheKey, SUMMARY_CACHE_TTL);
     if (cached) {
@@ -306,7 +716,6 @@
     }
   };
 
-  /** Convert plain text summary to formatted HTML paragraphs */
   const formatSummary = (text) => {
     return text
       .split(/\n{2,}/)
@@ -314,6 +723,89 @@
       .filter(Boolean)
       .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
       .join('');
+  };
+
+  // ═══════════════════════════════════════════════
+  //  GENERATE ARTICLE (Backend Netlify Blobs storage)
+  // ═══════════════════════════════════════════════
+
+  const handleGenerate = async (title, url, source, tags, buttonEl) => {
+    showToast('AI is writing an original premium article... Please wait.', 'success');
+    buttonEl.classList.add('generating');
+    buttonEl.innerHTML = `<span class="sparkle">⏳</span> Writing...`;
+
+    try {
+      const res = await fetch('/api/generate-article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, url, source, tags })
+      });
+
+      buttonEl.classList.remove('generating');
+      buttonEl.innerHTML = `<span class="sparkle">✍️</span> Generate Article`;
+
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+
+      const article = await res.json();
+      showToast('Article generated successfully and saved to storage!', 'success');
+
+      // Refresh articles array
+      await fetchArticles();
+
+      // If user is on DevPulse Articles tab, re-render immediately
+      if (activeFilter === 'articles') {
+        renderFeed();
+      } else {
+        // Toggle view to the Articles tab so the user sees it immediately
+        const artBtn = Array.from(filterBtns).find(btn => btn.dataset.source === 'articles');
+        if (artBtn) {
+          artBtn.click();
+        }
+      }
+
+    } catch (err) {
+      console.error('Generate Article error:', err);
+      buttonEl.classList.remove('generating');
+      buttonEl.innerHTML = `<span class="sparkle">✍️</span> Generate Article`;
+      showToast('Failed to auto-write article. AI studio limit reached.');
+    }
+  };
+
+  // Fetch and display full article details in Reader Modal
+  const openArticleReader = async (articleId) => {
+    openArticleModal();
+
+    try {
+      const res = await fetch(`/api/articles?id=${articleId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const article = await res.json();
+
+      // Show cover image if it exists, otherwise hide container
+      if (article.coverImage) {
+        articleCover.src = article.coverImage;
+        articleCover.style.display = 'block';
+        articleCoverContainer.style.display = 'block';
+      } else {
+        articleCover.style.display = 'none';
+        articleCoverContainer.style.display = 'none';
+      }
+
+      articleSourceBadge.textContent = (article.source || 'DevPulse').toUpperCase();
+      articleSourceBadge.className = `source-badge ${article.source || 'hn'}`;
+      articleReadtime.textContent = `⚡ ${article.readTime || 3} min read`;
+      articleDate.textContent = article.generatedAt ? new Date(article.generatedAt).toLocaleDateString() : '';
+      articleReaderTitle.textContent = article.title;
+
+      // Parse Markdown body to HTML
+      articleReaderBody.innerHTML = parseMarkdown(article.content);
+
+      articleSourceLink.href = article.sourceUrl || '#';
+      articleModelBadge.textContent = `Model: ${article.model || 'gemini-2.5-flash'}`;
+
+    } catch (err) {
+      console.error('Failed to load full article:', err);
+      articleReaderBody.innerHTML = `<div class="feed-error">Could not fetch article details. Try again.</div>`;
+    }
   };
 
   // ═══════════════════════════════════════════════
@@ -330,7 +822,6 @@
       return;
     }
 
-    // Collect top 10 headlines
     const headlines = allArticles
       .slice(0, 10)
       .map((a) => a.title || 'Untitled')
@@ -367,6 +858,115 @@
   });
 
   // ═══════════════════════════════════════════════
+  //  DASHBOARD MODAL RENDERING
+  // ═══════════════════════════════════════════════
+
+  const openDashboard = () => {
+    openDashboardModal();
+
+    // 1. Gather stats
+    const totalFeedCount = allArticles.length;
+    const hnArticles = allArticles.filter(a => a.source === 'hackernews').length;
+    const devtoArticles = allArticles.filter(a => a.source === 'devto').length;
+    const aiArticles = allArticles.filter(a => a.source === 'ai-news').length;
+
+    const savedCount = getBookmarks().length;
+    const generatedCount = devpulseArticles.length;
+
+    // Aggregate tags
+    const tagCounts = {};
+    allArticles.forEach(a => {
+      const tags = a.tags || a.tag_list || [];
+      tags.forEach(tag => {
+        const clean = tag.toLowerCase().trim();
+        tagCounts[clean] = (tagCounts[clean] || 0) + 1;
+      });
+    });
+
+    // Sort tags
+    const topTags = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+
+    // Calculate source percentages
+    const maxVal = Math.max(hnArticles, devtoArticles, aiArticles, 1);
+    const hnPct = Math.round((hnArticles / maxVal) * 100);
+    const devtoPct = Math.round((devtoArticles / maxVal) * 100);
+    const aiPct = Math.round((aiArticles / maxVal) * 100);
+
+    dashboardBody.innerHTML = `
+      <div class="db-grid">
+        <div class="db-card">
+          <div class="db-card-val">${totalFeedCount}</div>
+          <div class="db-card-lbl">Feed Stories</div>
+        </div>
+        <div class="db-card">
+          <div class="db-card-val">${generatedCount}</div>
+          <div class="db-card-lbl">AI Originals</div>
+        </div>
+        <div class="db-card">
+          <div class="db-card-val">${savedCount}</div>
+          <div class="db-card-lbl">Bookmarked</div>
+        </div>
+      </div>
+
+      <div class="db-section">
+        <h4>📦 Feed Sources Density</h4>
+        
+        <div class="db-bar-item">
+          <div class="db-bar-lbls">
+            <span>HackerNews stories</span>
+            <span>${hnArticles} stories</span>
+          </div>
+          <div class="db-bar-track">
+            <div class="db-bar-fill" style="width: ${hnPct}%; background: var(--accent-cyan);"></div>
+          </div>
+        </div>
+
+        <div class="db-bar-item">
+          <div class="db-bar-lbls">
+            <span>Dev.to articles</span>
+            <span>${devtoArticles} stories</span>
+          </div>
+          <div class="db-bar-track">
+            <div class="db-bar-fill" style="width: ${devtoPct}%; background: var(--accent-purple);"></div>
+          </div>
+        </div>
+
+        <div class="db-bar-item">
+          <div class="db-bar-lbls">
+            <span>TensorFeed AI news</span>
+            <span>${aiArticles} stories</span>
+          </div>
+          <div class="db-bar-track">
+            <div class="db-bar-fill" style="width: ${aiPct}%; background: var(--accent-pink);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="db-section">
+        <h4>🏷️ Trending Topics Cloud</h4>
+        <div class="db-tags-cloud">
+          ${topTags.length > 0
+            ? topTags.map(([tag, count]) => `<span class="db-tag">#${tag} (${count})</span>`).join('')
+            : '<span class="card-time">No trending tags detected yet.</span>'
+          }
+        </div>
+      </div>
+
+      <div class="db-section">
+        <h4>⚡ AI Engine Pool Health</h4>
+        <p style="font-size: 13px; color: var(--text-secondary);">
+          Currently executing with automatic **Multi-Key Gemini Rotator** (failover to Groq Llama 3.3).
+          Models in rotation pool: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, llama-3.3-70b.
+        </p>
+      </div>
+    `;
+  };
+
+  dashboardBtn.addEventListener('click', openDashboard);
+
+  // ═══════════════════════════════════════════════
   //  MODEL STATUS
   // ═══════════════════════════════════════════════
 
@@ -377,11 +977,9 @@
       const data = await res.json();
       const label = modelStatus.querySelector('.status-label');
       if (data.model && label) {
-        label.textContent = data.model;
+        label.textContent = `${data.model} (${data.configuredGeminiKeys} keys)`;
       }
-    } catch {
-      // Silently ignore — status endpoint is optional
-    }
+    } catch {}
   };
 
   // ═══════════════════════════════════════════════
@@ -389,8 +987,26 @@
   // ═══════════════════════════════════════════════
 
   const init = () => {
+    applyTheme(themeMode);
+    
+    // Set notification button bell status
+    if (notificationsEnabled) {
+      notificationBtn.querySelector('.btn-icon').textContent = '🔔';
+    } else {
+      notificationBtn.querySelector('.btn-icon').textContent = '🔕';
+    }
+
     fetchAllFeeds();
     updateModelStatus();
+
+    // Register service worker for PWA offline utility
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('DevPulse ServiceWorker registered with scope:', reg.scope))
+          .catch(err => console.warn('DevPulse ServiceWorker registration failed:', err));
+      });
+    }
 
     // Auto-refresh
     setInterval(() => {
@@ -398,7 +1014,6 @@
     }, REFRESH_INTERVAL);
   };
 
-  // Wait for DOM ready (script is at bottom, so should be fine, but just in case)
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

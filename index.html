@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DevPulse — AI-Powered Developer Intelligence</title>
-  <meta name="description" content="DevPulse aggregates top developer news from HackerNews, Dev.to, and AI feeds — with instant AI-powered summaries and trend analysis powered by Gemini and Groq.">
+  <meta name="description" content="DevPulse aggregates top developer news from HackerNews, Dev.to, and AI feeds — with instant AI-powered summaries, articles, and trend analysis powered by Gemini and Groq.">
   <meta name="theme-color" content="#0a0a0f">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="DevPulse — AI-Powered Developer Intelligence">
-  <meta property="og:description" content="Real-time developer news feed with AI summaries and trend analysis. Powered by Gemini, Groq, HackerNews, Dev.to, and TensorFeed.">
+  <meta property="og:description" content="Real-time developer news feed with AI summaries, full article generation, and trend analysis. Powered by Gemini, Groq, HackerNews, Dev.to, and TensorFeed.">
   <meta property="og:url" content="https://devpulse.dev">
   <meta property="og:site_name" content="DevPulse">
 
@@ -18,6 +18,11 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="DevPulse — AI-Powered Developer Intelligence">
   <meta name="twitter:description" content="Real-time developer news feed with AI summaries and trend analysis.">
+
+  <!-- PWA Support -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <!-- Google Font: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,9 +44,20 @@
         <p class="subtitle">AI-Powered Developer Intelligence</p>
       </div>
       <div class="header-actions">
-        <button class="btn btn-trend" id="trend-btn">
+        <button class="btn btn-trend" id="trend-btn" title="Daily Trends">
           <span class="btn-icon">📊</span>
-          Trend Analysis
+          Trends
+        </button>
+        <button class="btn btn-dashboard" id="dashboard-btn" title="View Dashboard">
+          <span class="btn-icon">📈</span>
+          Dashboard
+        </button>
+        <button class="btn-icon-only" id="notification-btn" title="Notifications">
+          <span class="btn-icon">🔔</span>
+          <span class="notification-badge" id="notification-badge" style="display:none;"></span>
+        </button>
+        <button class="btn-icon-only" id="theme-btn" title="Change Theme">
+          <span class="btn-icon">🌙</span>
         </button>
         <div class="model-status" id="model-status">
           <span class="status-dot"></span>
@@ -53,11 +69,22 @@
 
   <!-- ═══════════════ MAIN ═══════════════ -->
   <main class="app-main">
+    <!-- Search Bar -->
+    <div class="search-container">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Search articles, tags, authors... (Press '/' or 'Ctrl+K' to focus)" autocomplete="off">
+        <kbd class="search-kbd">/</kbd>
+      </div>
+    </div>
+
     <div class="feed-filters">
       <button class="filter-btn active" data-source="all">All</button>
       <button class="filter-btn" data-source="hackernews">HackerNews</button>
       <button class="filter-btn" data-source="devto">Dev.to</button>
       <button class="filter-btn" data-source="ai-news">AI News</button>
+      <button class="filter-btn" data-source="articles">📝 DevPulse Articles</button>
+      <button class="filter-btn" data-source="bookmarks">🔖 Saved</button>
     </div>
 
     <div class="feed-container" id="feed">
@@ -81,10 +108,49 @@
     </div>
   </div>
 
+  <!-- ═══════════════ DEVPULSE ARTICLE READER MODAL ═══════════════ -->
+  <div class="modal-overlay" id="article-modal-overlay">
+    <div class="modal article-reader-modal">
+      <div class="article-reader-header">
+        <div class="article-cover-container" id="article-cover-container">
+          <img class="article-cover" id="article-cover" src="" alt="Article cover">
+          <div class="article-cover-gradient"></div>
+        </div>
+        <div class="article-reader-meta">
+          <span class="source-badge" id="article-source-badge"></span>
+          <span class="article-readtime" id="article-readtime"></span>
+          <span class="article-date" id="article-date"></span>
+        </div>
+        <h2 id="article-reader-title"></h2>
+        <button class="modal-close" id="article-modal-close">&times;</button>
+      </div>
+      <div class="article-reader-body" id="article-reader-body">
+        <!-- Rendered Full article -->
+      </div>
+      <div class="article-reader-footer">
+        <a id="article-source-link" href="#" target="_blank" rel="noopener noreferrer">View Original Source →</a>
+        <span class="model-badge" id="article-model-badge"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ DASHBOARD MODAL ═══════════════ -->
+  <div class="modal-overlay" id="dashboard-overlay">
+    <div class="modal dashboard-modal">
+      <div class="modal-header">
+        <h3>📊 DevPulse Premium Dashboard</h3>
+        <button class="modal-close" id="dashboard-close">&times;</button>
+      </div>
+      <div class="modal-body" id="dashboard-body">
+        <!-- Statistics cards rendered by JS -->
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════ FOOTER ═══════════════ -->
   <footer class="app-footer">
     <p class="footer-powered">Powered by <strong>Gemini</strong> + <strong>Groq</strong> + <strong>HackerNews</strong> + <strong>Dev.to</strong> + <strong>TensorFeed</strong></p>
-    <p class="footer-note">All APIs used within free tier limits</p>
+    <p class="footer-note">All APIs cached and optimized for high-performance offline developer utility</p>
   </footer>
 
   <!-- Toast container for notifications -->
