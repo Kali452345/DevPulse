@@ -527,7 +527,7 @@
             </div>
           </div>
           ${coverImgHtml}
-          <h2 class="card-title"><a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a></h2>
+          <h2 class="card-title">${title}</h2>
           ${tagsHtml}
           ${descHtml}
           <div class="card-bottom">

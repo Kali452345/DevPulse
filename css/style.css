@@ -108,8 +108,6 @@ body::after {
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   padding: 24px;
@@ -237,8 +235,6 @@ body::after {
   display: flex;
   flex-direction: column;
   background: var(--bg-card);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   padding: 24px;
@@ -298,8 +294,6 @@ body::after {
 .feed-card {
   position: relative;
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   padding: 20px 22px;
@@ -528,8 +522,6 @@ body::after {
   inset: 0;
   z-index: 1000;
   background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -549,8 +541,6 @@ body::after {
   max-width: 560px;
   max-height: 80vh;
   background: rgba(18, 18, 26, 0.92);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.03);
@@ -694,8 +684,6 @@ body::after {
   padding: 12px 18px;
   border-radius: var(--radius-sm);
   background: rgba(18, 18, 26, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   font-size: 13px;
@@ -1468,8 +1456,6 @@ body::after {
   width: 360px;
   height: 480px;
   background: rgba(18, 18, 26, 0.88);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   box-shadow: 0 16px 64px rgba(0, 0, 0, 0.45);
