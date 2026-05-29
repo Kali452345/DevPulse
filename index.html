@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevPulse — AI-Powered Developer Intelligence</title>
+  <meta name="description" content="DevPulse aggregates top developer news from HackerNews, Dev.to, and AI feeds — with instant AI-powered summaries and trend analysis powered by Gemini and Groq.">
+  <meta name="theme-color" content="#0a0a0f">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="DevPulse — AI-Powered Developer Intelligence">
+  <meta property="og:description" content="Real-time developer news feed with AI summaries and trend analysis. Powered by Gemini, Groq, HackerNews, Dev.to, and TensorFeed.">
+  <meta property="og:url" content="https://devpulse.dev">
+  <meta property="og:site_name" content="DevPulse">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="DevPulse — AI-Powered Developer Intelligence">
+  <meta name="twitter:description" content="Real-time developer news feed with AI summaries and trend analysis.">
+
+  <!-- Google Font: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ═══════════════ HEADER ═══════════════ -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <div class="logo">
+          <span class="logo-icon">⚡</span>
+          <h1 class="logo-text">DevPulse</h1>
+        </div>
+        <p class="subtitle">AI-Powered Developer Intelligence</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-trend" id="trend-btn">
+          <span class="btn-icon">📊</span>
+          Trend Analysis
+        </button>
+        <div class="model-status" id="model-status">
+          <span class="status-dot"></span>
+          <span class="status-label">gemini-2.5-flash</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════ MAIN ═══════════════ -->
+  <main class="app-main">
+    <div class="feed-filters">
+      <button class="filter-btn active" data-source="all">All</button>
+      <button class="filter-btn" data-source="hackernews">HackerNews</button>
+      <button class="filter-btn" data-source="devto">Dev.to</button>
+      <button class="filter-btn" data-source="ai-news">AI News</button>
+    </div>
+
+    <div class="feed-container" id="feed">
+      <!-- Cards rendered by JS -->
+    </div>
+  </main>
+
+  <!-- ═══════════════ AI SUMMARY MODAL ═══════════════ -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">AI Summary</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+      </div>
+      <div class="modal-footer">
+        <span class="model-badge" id="modal-model"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ FOOTER ═══════════════ -->
+  <footer class="app-footer">
+    <p class="footer-powered">Powered by <strong>Gemini</strong> + <strong>Groq</strong> + <strong>HackerNews</strong> + <strong>Dev.to</strong> + <strong>TensorFeed</strong></p>
+    <p class="footer-note">All APIs used within free tier limits</p>
+  </footer>
+
+  <!-- Toast container for notifications -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

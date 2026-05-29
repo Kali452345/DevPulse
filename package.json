@@ -1,0 +1,9 @@
+{
+  "name": "devpulse",
+  "version": "1.0.0",
+  "description": "AI-powered developer intelligence feed",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

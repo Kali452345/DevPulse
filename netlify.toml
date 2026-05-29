@@ -1,0 +1,35 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Redirect /api/* to Netlify Functions
+[[redirects]]
+  from = "/api/hn"
+  to = "/.netlify/functions/hn"
+  status = 200
+
+[[redirects]]
+  from = "/api/devto"
+  to = "/.netlify/functions/devto"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai-news"
+  to = "/.netlify/functions/ai-news"
+  status = 200
+
+[[redirects]]
+  from = "/api/summarize"
+  to = "/.netlify/functions/summarize"
+  status = 200
+
+[[redirects]]
+  from = "/api/status"
+  to = "/.netlify/functions/status"
+  status = 200
+
+[context.production.environment]
+  NODE_VERSION = "18"
