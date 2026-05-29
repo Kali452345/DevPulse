@@ -507,6 +507,16 @@
 
       const isBooked = isBookmarked(artId);
 
+      const coverImgHtml = article.cover_image
+        ? `<div class="feed-card-cover-container">
+             <img class="feed-card-cover" src="${article.cover_image}" alt="${title}" loading="lazy">
+           </div>`
+        : '';
+
+      const descHtml = (article.description || article.summary)
+        ? `<p class="feed-card-description">${article.description || article.summary}</p>`
+        : '';
+
       return `
         <article class="feed-card" data-source="${article.source}" style="animation-delay:${i * 50}ms">
           <div class="card-top">
@@ -521,8 +531,10 @@
               </button>
             </div>
           </div>
+          ${coverImgHtml}
           <h2 class="card-title"><a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a></h2>
           ${tagsHtml}
+          ${descHtml}
           <div class="card-bottom">
             <div class="card-stats">
               <span class="stat"><span class="stat-icon">▲</span> ${formatNumber(points)}</span>
@@ -531,9 +543,6 @@
             <div style="display:flex; gap:8px;">
               <button class="btn-summarize" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}">
                 <span class="sparkle">✨</span> Summarize
-              </button>
-              <button class="btn-generate" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}" data-source="${article.source}" data-tags="${tags.join(',')}">
-                <span class="sparkle">✍️</span> Generate Article
               </button>
             </div>
           </div>
@@ -546,16 +555,6 @@
         const t = btn.getAttribute('data-title');
         const u = btn.getAttribute('data-url');
         handleSummarize(t, u);
-      });
-    });
-
-    feedEl.querySelectorAll('.btn-generate').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const title = btn.getAttribute('data-title');
-        const url = btn.getAttribute('data-url');
-        const src = btn.getAttribute('data-source');
-        const tags = btn.getAttribute('data-tags').split(',').filter(Boolean);
-        handleGenerate(title, url, src, tags, btn);
       });
     });
 

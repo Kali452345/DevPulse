@@ -1378,3 +1378,105 @@ body::after {
   }
 }
 
+/* ═══════════════════════════════════════════════
+   PREMIUM DYNAMIC ANIMATED BACKGROUNDS
+   ═══════════════════════════════════════════════ */
+.ambient-blobs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  opacity: 0.12;
+  mix-blend-mode: screen;
+  animation: float-blob 25s ease-in-out infinite alternate;
+}
+
+[data-theme="light"] .blob {
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  filter: blur(110px);
+}
+
+.blob-1 {
+  top: -15%;
+  left: 5%;
+  width: 45vw;
+  height: 45vw;
+  background: radial-gradient(circle, var(--accent-cyan) 0%, transparent 80%);
+  animation-duration: 22s;
+}
+
+.blob-2 {
+  bottom: -10%;
+  right: -5%;
+  width: 40vw;
+  height: 40vw;
+  background: radial-gradient(circle, var(--accent-purple) 0%, transparent 80%);
+  animation-duration: 26s;
+  animation-delay: -5s;
+}
+
+.blob-3 {
+  top: 40%;
+  left: 60%;
+  width: 35vw;
+  height: 35vw;
+  background: radial-gradient(circle, var(--accent-pink) 0%, transparent 80%);
+  animation-duration: 30s;
+  animation-delay: -12s;
+}
+
+@keyframes float-blob {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate(6%, 10%) scale(1.1) rotate(180deg);
+  }
+  100% {
+    transform: translate(-4%, -6%) scale(0.95) rotate(360deg);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   FEED CARD PREVIEWS & IMAGE HEADER
+   ═══════════════════════════════════════════════ */
+.feed-card-cover-container {
+  width: 100%;
+  height: 150px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  background: #000;
+  border: 1px solid var(--border);
+}
+
+.feed-card-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.85;
+  transition: var(--transition);
+}
+
+.feed-card:hover .feed-card-cover {
+  transform: scale(1.03);
+  opacity: 1;
+}
+
+.feed-card-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 4px;
+  margin-bottom: 14px;
+}
+
+

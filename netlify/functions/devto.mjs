@@ -27,6 +27,8 @@ function normalize(article) {
     time: article.published_at,
     comments: article.comments_count,
     tags: article.tag_list,
+    cover_image: article.cover_image || article.social_image || "",
+    description: article.description || "",
     source: "devto",
   };
 }

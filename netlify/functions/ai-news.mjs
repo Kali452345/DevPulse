@@ -24,6 +24,8 @@ function normalize(item) {
     title: item.title,
     url: item.url,
     summary: item.summary,
+    description: item.summary || item.description || "",
+    cover_image: item.cover_image ?? item.image ?? item.thumbnail ?? "",
     time: item.time ?? item.published_at ?? item.created_at,
     source: "tensorfeed",
   };
