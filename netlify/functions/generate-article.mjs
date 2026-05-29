@@ -140,15 +140,15 @@ async function fetchNativeDevToArticle(url) {
 }
 
 async function generateAIArticle(title, url, scrapedDesc, scrapedContent) {
-  const prompt = \`You are a high-profile technology journalist writing for DevPulse.
+  const prompt = `You are a high-profile technology journalist writing for DevPulse.
 Create a fully detailed, engaging, and professional technical article about:
-Topic: "\${title}"
-URL: \${url}
-Context Description: \${scrapedDesc || "Developer breaking news"}
+Topic: "${title}"
+URL: ${url}
+Context Description: ${scrapedDesc || "Developer breaking news"}
 
 Here is the extracted raw content from the source page. Use this as your primary factual basis. Summarize and structure it beautifully. DO NOT hallucinate facts not present here.
 RAW CONTENT:
-\${scrapedContent}
+${scrapedContent}
 ---
 
 Requirements:
@@ -156,7 +156,7 @@ Requirements:
 - Start with a compelling bold introduction about "Why it matters".
 - Explain the key mechanics, features, or architecture details found in the raw content.
 - Provide a dedicated "Developer Impact" section explaining how this affects workflows, tools, or best practices.
-- Output the article in Markdown format. Do not add introductory conversational text like "Here is your article:". Just return the Markdown itself.\`;
+- Output the article in Markdown format. Do not add introductory conversational text like "Here is your article:". Just return the Markdown itself.`;
 
   let resultText = null;
   let usedModel = null;
@@ -173,7 +173,7 @@ Requirements:
         if (!apiKey) continue;
         keyManager.incrementRequest(keyIndex);
 
-        const apiUr = \`https://generativelanguage.googleapis.com/v1beta/models/\${model.id}:generateContent?key=\${apiKey}\`;
+        const apiUr = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${apiKey}`;
         const res = await fetch(apiUr, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -203,7 +203,7 @@ Requirements:
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: \`Bearer \${apiKey}\`,
+            Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
             model: model.id,
@@ -221,7 +221,7 @@ Requirements:
         }
       }
     } catch (e) {
-      console.error(\`Attempt with \${model.id} failed:\`, e);
+      console.error(`Attempt with ${model.id} failed:`, e);
     }
   }
 
@@ -273,7 +273,7 @@ export default async (req) => {
     }
 
     // Generate unique ID
-    const articleId = \`dp-\${Date.now()}\`;
+    const articleId = `dp-${Date.now()}`;
     const generatedAt = new Date().toISOString();
 
     // Word count / read time
