@@ -3,194 +3,220 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DevPulse — AI-Powered Developer Intelligence</title>
-  <meta name="description" content="DevPulse aggregates top developer news from HackerNews, Dev.to, and AI feeds — with instant AI-powered summaries, articles, and trend analysis powered by Gemini and Groq.">
-  <meta name="theme-color" content="#0a0a0f">
-
-  <!-- Open Graph -->
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="DevPulse — AI-Powered Developer Intelligence">
-  <meta property="og:description" content="Real-time developer news feed with AI summaries, full article generation, and trend analysis. Powered by Gemini, Groq, HackerNews, Dev.to, and TensorFeed.">
-  <meta property="og:url" content="https://devpulse.dev">
-  <meta property="og:site_name" content="DevPulse">
-
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="DevPulse — AI-Powered Developer Intelligence">
-  <meta name="twitter:description" content="Real-time developer news feed with AI summaries and trend analysis.">
-
-  <!-- PWA Support -->
+  <title>DevPulse — AI Developer Intelligence</title>
+  <meta name="description" content="DevPulse aggregates top developer news from HackerNews, Dev.to, Lobsters, GitHub Trending and AI feeds with instant AI summaries.">
+  <meta name="theme-color" content="#0a0805">
   <link rel="manifest" href="/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <!-- Google Font: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Bebas+Neue&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-  <!-- ═══════════════ MAIN DASHBOARD LAYOUT ═══════════════ -->
-  <div class="dashboard-layout">
-    
-    <!-- Sidebar (Left) -->
-    <aside class="sidebar">
-      <div class="header-brand">
-        <div class="logo">
-          <span class="logo-icon">⚡</span>
-          <h1 class="logo-text">DevPulse</h1>
+  <div class="app-shell">
+
+    <!-- ── SIDEBAR ───────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">DP</div>
+        <div class="logo-wordmark">
+          <span class="logo-name">DevPulse</span>
+          <span class="logo-tag">Intelligence Feed</span>
         </div>
-        <p class="subtitle">AI Developer Intelligence</p>
       </div>
 
       <nav class="sidebar-nav">
-        <h4 class="nav-heading">Feeds</h4>
-        <button class="filter-btn active" data-source="all"><span class="btn-icon">🌐</span> All News</button>
-        <button class="filter-btn" data-source="devto"><span class="btn-icon">💻</span> Dev.to</button>
-        <button class="filter-btn" data-source="hackernews"><span class="btn-icon">🔶</span> HackerNews</button>
-        <button class="filter-btn" data-source="ai-news"><span class="btn-icon">🧠</span> TensorFeed</button>
-        
-        <h4 class="nav-heading">Library</h4>
-        <button class="filter-btn" data-source="articles"><span class="btn-icon">📝</span> DevPulse Articles</button>
-        <button class="filter-btn" data-source="bookmarks"><span class="btn-icon">🔖</span> Saved</button>
+        <div class="nav-group">
+          <span class="nav-label">All Feeds</span>
+          <button class="nav-btn active" data-source="all">
+            <span class="nav-icon">◈</span>
+            <span class="nav-text">All Stories</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-label">Sources</span>
+          <button class="nav-btn" data-source="hackernews">
+            <span class="nav-icon">△</span>
+            <span class="nav-text">HackerNews</span>
+          </button>
+          <button class="nav-btn" data-source="devto">
+            <span class="nav-icon">⬡</span>
+            <span class="nav-text">Dev.to</span>
+          </button>
+          <button class="nav-btn" data-source="ai-news">
+            <span class="nav-icon">◉</span>
+            <span class="nav-text">AI &amp; ML</span>
+          </button>
+          <button class="nav-btn" data-source="lobsters">
+            <span class="nav-icon">⊛</span>
+            <span class="nav-text">Lobsters</span>
+          </button>
+          <button class="nav-btn" data-source="github">
+            <span class="nav-icon">⌥</span>
+            <span class="nav-text">GitHub Trending</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-label">Library</span>
+          <button class="nav-btn" data-source="articles">
+            <span class="nav-icon">✦</span>
+            <span class="nav-text">AI Articles</span>
+          </button>
+          <button class="nav-btn" data-source="bookmarks">
+            <span class="nav-icon">◇</span>
+            <span class="nav-text">Saved</span>
+          </button>
+        </div>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="model-status" id="model-status">
-          <span class="status-dot"></span>
-          <span class="status-label">gemini-2.5-flash</span>
+      <div class="sidebar-bottom">
+        <div class="ai-status" id="ai-status">
+          <span class="pulse-dot"></span>
+          <span class="status-text" id="status-text">gemini-2.5-flash</span>
         </div>
-        <div class="header-actions">
-          <button class="btn-icon-only" id="notification-btn" title="Notifications">
-            <span class="btn-icon">🔔</span>
-            <span class="notification-badge" id="notification-badge" style="display:none;"></span>
-          </button>
-          <button class="btn-icon-only" id="theme-btn" title="Change Theme">
-            <span class="btn-icon">🌙</span>
+        <div class="sidebar-controls">
+          <button class="ctrl-btn" id="theme-btn" title="Toggle Theme">◐</button>
+          <button class="ctrl-btn" id="notification-btn" title="Notifications">
+            ◯
+            <span class="notif-badge" id="notification-badge" style="display:none"></span>
           </button>
         </div>
       </div>
     </aside>
 
-    <div class="mobile-overlay" id="mobile-overlay"></div>
+    <div class="mob-overlay" id="mob-overlay"></div>
 
-    <!-- Main Content (Center) -->
-    <main class="app-main">
-      <!-- Mobile Top Bar -->
-      <div class="mobile-top-bar" id="mobile-top-bar">
-        <button class="mobile-menu-btn" id="mobile-menu-btn" title="Menu">☰</button>
-        <div class="logo" style="display:flex; align-items:center; gap:8px;">
-          <span class="logo-icon" style="font-size:20px;">⚡</span>
-          <span class="logo-text" style="font-size:18px;">DevPulse</span>
+    <!-- ── MAIN CONTENT ───────────────────────── -->
+    <div class="main-wrap">
+
+      <header class="topbar">
+        <button class="mob-menu-btn" id="mob-menu-btn">☰</button>
+        <div class="topbar-search">
+          <span class="search-glyph">⌕</span>
+          <input type="text" id="search-input" placeholder="Search stories, tags, authors…  (/)" autocomplete="off">
+        </div>
+        <div class="topbar-meta">
+          <span class="live-indicator">
+            <span class="live-dot"></span> LIVE
+          </span>
+        </div>
+      </header>
+
+      <!-- Stats Strip -->
+      <div class="stats-strip" id="stats-strip">
+        <div class="strip-inner">
+          <span class="strip-item" id="strip-total">— stories</span>
+          <span class="strip-sep">·</span>
+          <span class="strip-item" id="strip-hn">△ HN 0</span>
+          <span class="strip-sep">·</span>
+          <span class="strip-item" id="strip-devto">⬡ Dev.to 0</span>
+          <span class="strip-sep">·</span>
+          <span class="strip-item" id="strip-ai">◉ AI 0</span>
+          <span class="strip-sep">·</span>
+          <span class="strip-item" id="strip-lobsters">⊛ Lobsters 0</span>
+          <span class="strip-sep">·</span>
+          <span class="strip-item" id="strip-github">⌥ GitHub 0</span>
+          <span class="strip-sep">·</span>
+          <span class="strip-item" id="strip-saved">◇ Saved 0</span>
         </div>
       </div>
-      <!-- Search Bar -->
-      <div class="search-container">
-        <div class="search-bar">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Search articles, tags, authors... (Press '/' or 'Ctrl+K')" autocomplete="off">
-          <kbd class="search-kbd">/</kbd>
-        </div>
-      </div>
 
-      <div class="feed-container masonry-grid" id="feed">
-        <!-- Cards rendered by JS -->
-      </div>
-    </main>
+      <main class="feed-area">
+        <div class="feed-grid" id="feed"></div>
+      </main>
 
-    <!-- Right Panel (Stats & Trends) -->
-    <aside class="right-panel">
-      <div class="panel-section">
-        <h3 class="panel-title"><span class="btn-icon">📈</span> Dashboard Stats</h3>
-        <div id="dashboard-body" class="dashboard-stats-container">
-          <!-- Stats rendered by JS -->
-        </div>
-      </div>
-    </aside>
-
+    </div>
   </div>
 
-  <!-- ═══════════════ MODALS ═══════════════ -->
-  <div class="modal-overlay" id="modal-overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="modal-title">AI Summary</h3>
-        <button class="modal-close" id="modal-close">&times;</button>
+  <!-- ══════════════════════════════════════════
+       ARTICLE READER OVERLAY
+  ══════════════════════════════════════════ -->
+  <div class="reader-overlay" id="reader-overlay">
+    <div class="reader-panel">
+      <div class="reader-toolbar">
+        <button class="reader-close" id="reader-close">← Back</button>
+        <div class="reader-meta-bar">
+          <span class="reader-badge" id="reader-source-badge"></span>
+          <span class="reader-readtime" id="reader-readtime"></span>
+          <span class="reader-date" id="reader-date"></span>
+        </div>
+        <div class="reader-toolbar-right">
+          <button class="reader-ai-btn" id="reader-ai-btn" style="display:none">✦ Generate AI Article</button>
+          <a class="reader-orig-link" id="reader-orig-link" href="#" target="_blank" rel="noopener noreferrer">Source ↗</a>
+        </div>
       </div>
-      <div class="modal-body" id="modal-body">
-        <div class="loading-dots"><span></span><span></span><span></span></div>
-      </div>
-      <div class="modal-footer">
-        <span class="model-badge" id="modal-model"></span>
+
+      <div class="reader-body-wrap">
+        <div class="reader-cover-wrap" id="reader-cover-wrap" style="display:none">
+          <img class="reader-cover" id="reader-cover" src="" alt="">
+          <div class="reader-cover-fade"></div>
+        </div>
+
+        <div class="reader-content">
+          <h1 class="reader-title" id="reader-title"></h1>
+          <div class="reader-model-bar">
+            <span class="reader-model" id="reader-model"></span>
+          </div>
+          <div class="reader-prose" id="reader-prose"></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="article-modal-overlay">
-    <div class="modal article-reader-modal">
-      <div class="article-reader-header">
-        <div class="article-cover-container" id="article-cover-container">
-          <img class="article-cover" id="article-cover" src="" alt="Article cover">
-          <div class="article-cover-gradient"></div>
-        </div>
-        <div class="article-reader-meta">
-          <span class="source-badge" id="article-source-badge"></span>
-          <span class="article-readtime" id="article-readtime"></span>
-          <span class="article-date" id="article-date"></span>
-        </div>
-        <h2 id="article-reader-title"></h2>
-        <button class="modal-close" id="article-modal-close">&times;</button>
+  <!-- ══════════════════════════════════════════
+       AI SUMMARY MODAL
+  ══════════════════════════════════════════ -->
+  <div class="modal-veil" id="modal-veil">
+    <div class="summary-modal">
+      <div class="sm-header">
+        <span class="sm-label">AI Summary</span>
+        <span class="sm-title" id="sm-title"></span>
+        <button class="sm-close" id="sm-close">✕</button>
       </div>
-      <div class="article-reader-body" id="article-reader-body">
-        <!-- Rendered Full article -->
+      <div class="sm-body" id="sm-body">
+        <div class="dots-loader"><span></span><span></span><span></span></div>
       </div>
-      <div class="article-reader-footer">
-        <a id="article-source-link" href="#" target="_blank" rel="noopener noreferrer">View Original Source →</a>
-        <span class="model-badge" id="article-model-badge"></span>
+      <div class="sm-footer">
+        <span class="sm-model" id="sm-model"></span>
       </div>
     </div>
   </div>
 
-  <!-- ═══════════════ FOOTER ═══════════════ -->
-  <footer class="app-footer">
-    <p class="footer-powered">Powered by <strong>Gemini</strong> + <strong>Groq</strong> + <strong>HackerNews</strong> + <strong>Dev.to</strong> + <strong>TensorFeed</strong></p>
-    <p class="footer-note">All APIs cached and optimized for high-performance offline developer utility</p>
-  </footer>
-
-  <!-- ═══════════════ AI CHAT WIDGET ═══════════════ -->
-  <button class="chat-floating-btn" id="chat-toggle-btn" title="Ask DevPulse AI">
-    <span class="chat-icon">💬</span>
+  <!-- ══════════════════════════════════════════
+       CHAT WIDGET
+  ══════════════════════════════════════════ -->
+  <button class="chat-fab" id="chat-fab" title="Ask DevPulse AI">
+    <span class="chat-fab-icon">✦</span>
   </button>
 
-  <div class="chat-widget-container" id="chat-widget">
-    <div class="chat-header">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span class="logo-icon" style="font-size: 16px;">⚡</span>
-        <span style="font-weight: 700; font-size: 13px;">DevPulse AI Assistant</span>
-      </div>
-      <button class="chat-close" id="chat-close-btn">&times;</button>
+  <div class="chat-drawer" id="chat-drawer">
+    <div class="cd-header">
+      <div class="cd-title"><span class="cd-dot"></span>DevPulse AI</div>
+      <button class="cd-close" id="chat-close">✕</button>
     </div>
-    <div class="chat-messages" id="chat-messages-container">
-      <div class="chat-msg ai">
-        Hello! I am DevPulse AI, your developer intelligence assistant. Ask me anything about today's tech news, headlines, trends, or programming!
+    <div class="cd-messages" id="chat-messages">
+      <div class="chat-bubble ai">
+        Hello — I'm DevPulse AI. Ask me about today's tech headlines, GitHub trends, AI news, or anything dev-related.
       </div>
     </div>
-    <div class="chat-quick-questions">
-      <button class="quick-q-btn" data-query="What are the key tech trends today?">📊 What is trending today?</button>
-      <button class="quick-q-btn" data-query="Summarize today's top HackerNews stories.">📰 Summarize HackerNews</button>
-      <button class="quick-q-btn" data-query="What is the latest AI and machine learning news?">🧠 Top AI News</button>
+    <div class="cd-quick">
+      <button class="quick-btn" data-query="What are the biggest tech trends today?">📊 Today's trends</button>
+      <button class="quick-btn" data-query="Summarize the top HackerNews stories right now.">△ HN digest</button>
+      <button class="quick-btn" data-query="What's the latest in AI and machine learning?">◉ AI news</button>
+      <button class="quick-btn" data-query="What are the most popular GitHub repos trending today?">⌥ GitHub trending</button>
     </div>
-    <div class="chat-input-bar">
-      <input type="text" id="chat-input-field" placeholder="Ask a tech question..." autocomplete="off">
-      <button id="chat-send-btn">Send</button>
+    <div class="cd-input">
+      <input type="text" id="chat-input" placeholder="Ask anything…" autocomplete="off">
+      <button id="chat-send">↑</button>
     </div>
   </div>
 
-  <!-- Toast container for notifications -->
-  <div class="toast-container" id="toast-container"></div>
+  <div class="toast-stack" id="toast-stack"></div>
 
   <script src="js/app.js"></script>
 </body>

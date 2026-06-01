@@ -88,7 +88,7 @@ export default async (req) => {
       ...(process.env.DEVTO_API_KEY ? { "api-key": process.env.DEVTO_API_KEY } : {}),
     };
 
-    const res = await fetch("https://dev.to/api/articles?per_page=30&top=1", {
+    const res = await fetch("https://dev.to/api/articles?per_page=60&top=1", {
       headers: apiHeaders,
     });
 

@@ -1,10 +1,6 @@
-// hn.mjs — HackerNews Feed Proxy with Netlify Blobs Caching
-// Fetches live from HN Algolia API and caches in Netlify Blobs.
-// Subsequent visits read from Blobs (fast). Supports ?force=true to refresh.
-
 import { getStore } from "@netlify/blobs";
 
-const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+const CACHE_TTL = 15 * 60 * 1000;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,105 +15,85 @@ export default async (req) => {
 
   const urlObj = new URL(req.url);
   const force = urlObj.searchParams.get("force") === "true";
+  const store = getStore("feeds");
 
   try {
-    const store = getStore("feeds");
-
-    // Check Blobs cache first
     if (!force) {
-      try {
-        const cached = await store.get("hn-feed", { type: "json" });
-        if (cached && cached.timestamp && Date.now() - cached.timestamp < CACHE_TTL) {
-          return new Response(JSON.stringify(cached.articles), {
-            status: 200,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json",
-              "X-Cache": "HIT",
-              "X-Cache-Age": String(Math.round((Date.now() - cached.timestamp) / 1000)),
-            },
-          });
-        }
-      } catch (err) {
-        console.warn("Blobs cache read failed for hn-feed:", err.message);
-      }
+      const cached = await getCached(store, "hn-feed");
+      if (cached) return json(cached.articles, { "X-Cache": "HIT" });
     }
 
-    // Fetch live from HN Algolia API
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const [topRes, bestRes] = await Promise.all([
+      fetchWithTimeout("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=60", 8000),
+      fetchWithTimeout("https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=40&page=1", 8000),
+    ]);
 
-    const res = await fetch(
-      "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30",
-      { signal: controller.signal }
-    );
-    clearTimeout(timeout);
+    if (!topRes.ok && !bestRes.ok) return await staleOrEmpty(store, "hn-feed");
 
-    if (!res.ok) {
-      // Try returning stale cache if API fails
-      try {
-        const stale = await store.get("hn-feed", { type: "json" });
-        if (stale && stale.articles) {
-          return new Response(JSON.stringify(stale.articles), {
-            status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
-          });
-        }
-      } catch {}
-      return new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const data = await res.json();
-    const articles = (data.hits || [])
-      .filter((h) => h.title)
-      .map((h) => ({
-        id: h.objectID,
-        title: h.title,
-        url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
-        link: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
-        by: h.author || "",
-        author: h.author || "",
-        time: h.created_at || new Date(h.created_at_i * 1000).toISOString(),
-        points: h.points || 0,
-        score: h.points || 0,
-        descendants: h.num_comments || 0,
-        comments_count: h.num_comments || 0,
-        source: "hackernews",
-      }));
-
-    // Save to Netlify Blobs
-    try {
-      await store.setJSON("hn-feed", { articles, timestamp: Date.now() });
-    } catch (err) {
-      console.warn("Failed to save hn-feed to Blobs:", err.message);
-    }
-
-    return new Response(JSON.stringify(articles), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "MISS" },
-    });
-
-  } catch (err) {
-    console.error("HackerNews endpoint error:", err);
-    // Try stale cache on any error
-    try {
-      const store = getStore("feeds");
-      const stale = await store.get("hn-feed", { type: "json" });
-      if (stale && stale.articles) {
-        return new Response(JSON.stringify(stale.articles), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "STALE" },
+    const seen = new Set();
+    const articles = [];
+    for (const res of [topRes, bestRes]) {
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const h of (data.hits || [])) {
+        if (!h.title || seen.has(h.objectID)) continue;
+        seen.add(h.objectID);
+        articles.push({
+          id: h.objectID,
+          title: h.title,
+          url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+          link: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+          by: h.author || "",
+          author: h.author || "",
+          time: h.created_at || new Date((h.created_at_i || 0) * 1000).toISOString(),
+          points: h.points || 0,
+          score: h.points || 0,
+          descendants: h.num_comments || 0,
+          comments_count: h.num_comments || 0,
+          source: "hackernews",
         });
       }
-    } catch {}
-    return new Response(JSON.stringify([]), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    }
+
+    await store.setJSON("hn-feed", { articles, timestamp: Date.now() });
+    return json(articles, { "X-Cache": "MISS" });
+  } catch (err) {
+    console.error("HackerNews endpoint error:", err.message);
+    return await staleOrEmpty(store, "hn-feed");
   }
 };
 
 export const config = { path: "/api/hn" };
+
+function json(body, headers = {}) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...headers },
+  });
+}
+
+async function getCached(store, key) {
+  try {
+    const cached = await store.get(key, { type: "json" });
+    if (cached?.timestamp && Date.now() - cached.timestamp < CACHE_TTL) return cached;
+  } catch {}
+  return null;
+}
+
+async function staleOrEmpty(store, key) {
+  try {
+    const stale = await store.get(key, { type: "json" });
+    if (stale?.articles) return json(stale.articles, { "X-Cache": "STALE" });
+  } catch {}
+  return json([]);
+}
+
+async function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}

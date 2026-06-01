@@ -103,7 +103,7 @@ export default async () => {
     const [hnRes, devtoRes, aiRes] = await Promise.allSettled([
       fetch("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"),
       fetch("https://dev.to/api/articles?per_page=20&top=1"),
-      fetch("https://tensorfeed.ai/api/v1/news")
+      fetch("https://tensorfeed.ai/api/news")
     ]);
 
     let candidates = [];

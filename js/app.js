@@ -1,688 +1,829 @@
 /* ══════════════════════════════════════════════════
-   DevPulse — Vanilla JS Application
+   DevPulse — App Logic v2
+   All articles open inline — real scraping first, AI as fallback/enhancement
+   Sources: HN · Dev.to · AI/ML · Lobsters · GitHub Trending · DevPulse Originals
    ══════════════════════════════════════════════════ */
 
 (() => {
   'use strict';
 
-  // ─── DOM References ───
-  const feedEl = document.getElementById('feed');
-  const modalOverlay = document.getElementById('modal-overlay');
-  const modalTitle = document.getElementById('modal-title');
-  const modalBody = document.getElementById('modal-body');
-  const modalModel = document.getElementById('modal-model');
-  const modalClose = document.getElementById('modal-close');
-  const modelStatus = document.getElementById('model-status');
-  const toastContainer = document.getElementById('toast-container');
-  const filterBtns = document.querySelectorAll('.filter-btn');
+  // ─── State ──────────────────────────────────────
+  let allArticles    = [];      // all feed articles merged
+  let devpulseArticles = [];    // ai-generated originals
+  let activeFilter   = 'all';
+  let searchQuery    = '';
+  let themeMode      = localStorage.getItem('dp-theme') || 'dark';
+  let notificationsEnabled = localStorage.getItem('dp-notifs') === 'true';
 
-  // NEW DOM References
-  const searchInput = document.getElementById('search-input');
-  const themeBtn = document.getElementById('theme-btn');
-  const notificationBtn = document.getElementById('notification-btn');
-  const notificationBadge = document.getElementById('notification-badge');
-  const dashboardBody = document.getElementById('dashboard-body');
+  const REFRESH_MS   = 5 * 60 * 1000;
+  const SUMMARY_TTL  = 60 * 60 * 1000;
 
-  const articleModalOverlay = document.getElementById('article-modal-overlay');
-  const articleModalClose = document.getElementById('article-modal-close');
-  const articleCover = document.getElementById('article-cover');
-  const articleCoverContainer = document.getElementById('article-cover-container');
-  const articleSourceBadge = document.getElementById('article-source-badge');
-  const articleReadtime = document.getElementById('article-readtime');
-  const articleDate = document.getElementById('article-date');
-  const articleReaderTitle = document.getElementById('article-reader-title');
-  const articleReaderBody = document.getElementById('article-reader-body');
-  const articleSourceLink = document.getElementById('article-source-link');
-  const articleModelBadge = document.getElementById('article-model-badge');
+  // ─── DOM refs ────────────────────────────────────
+  const feedEl        = document.getElementById('feed');
+  const searchInput   = document.getElementById('search-input');
+  const themeBtn      = document.getElementById('theme-btn');
+  const notifBtn      = document.getElementById('notification-btn');
+  const notifBadge    = document.getElementById('notification-badge');
+  const statusText    = document.getElementById('status-text');
+  const toastStack    = document.getElementById('toast-stack');
 
-  // ─── State ───
-  let allArticles = []; // News feed articles
-  let devpulseArticles = []; // AI written articles loaded from backend Netlify Blobs
-  let activeFilter = 'all';
-  let searchQuery = '';
-  let themeMode = localStorage.getItem('devpulse-theme') || 'dark'; // dark, light, system
-  let notificationsEnabled = localStorage.getItem('devpulse-notifications') === 'true';
+  // Strip
+  const stripTotal    = document.getElementById('strip-total');
+  const stripHn       = document.getElementById('strip-hn');
+  const stripDevto    = document.getElementById('strip-devto');
+  const stripAi       = document.getElementById('strip-ai');
+  const stripLobsters = document.getElementById('strip-lobsters');
+  const stripGithub   = document.getElementById('strip-github');
+  const stripSaved    = document.getElementById('strip-saved');
 
-  const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
-  const SUMMARY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-  const TREND_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+  // Reader
+  const readerOverlay  = document.getElementById('reader-overlay');
+  const readerClose    = document.getElementById('reader-close');
+  const readerTitle    = document.getElementById('reader-title');
+  const readerProse    = document.getElementById('reader-prose');
+  const readerBadge    = document.getElementById('reader-source-badge');
+  const readerReadtime = document.getElementById('reader-readtime');
+  const readerDate     = document.getElementById('reader-date');
+  const readerOrigLink = document.getElementById('reader-orig-link');
+  const readerModel    = document.getElementById('reader-model');
+  const readerCoverWrap= document.getElementById('reader-cover-wrap');
+  const readerCover    = document.getElementById('reader-cover');
+  const readerAiBtn    = document.getElementById('reader-ai-btn');
 
-  // ═══════════════════════════════════════════════
+  // Summary modal
+  const modalVeil = document.getElementById('modal-veil');
+  const smTitle   = document.getElementById('sm-title');
+  const smBody    = document.getElementById('sm-body');
+  const smModel   = document.getElementById('sm-model');
+  const smClose   = document.getElementById('sm-close');
+
+  const navBtns = document.querySelectorAll('.nav-btn');
+
+  // ════════════════════════════════════════════════
   //  HELPERS
-  // ═══════════════════════════════════════════════
-
-  const timeAgo = (dateString) => {
-    if (!dateString) return '';
-    const now = Date.now();
-    const then = new Date(dateString).getTime();
-    const diff = now - then;
-    if (diff < 0) return 'just now';
-
-    const seconds = Math.floor(diff / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-
-    const days = Math.floor(hours / 24);
-    if (days < 30) return `${days}d ago`;
-
-    const months = Math.floor(days / 30);
-    return `${months}mo ago`;
+  // ════════════════════════════════════════════════
+  const timeAgo = (d) => {
+    if (!d) return '';
+    const diff = Date.now() - new Date(d).getTime();
+    if (diff < 0) return 'now';
+    const s = Math.floor(diff / 1000);
+    if (s < 60)  return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60)  return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24)  return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
   };
 
-  const formatNumber = (n) => {
-    if (n == null) return '0';
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  const fmt = (n) => {
+    if (!n) return '0';
+    if (n >= 1e6) return `${(n/1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${(n/1e3).toFixed(1)}k`;
     return String(n);
   };
 
-  const getFromCache = (key, maxAgeMs) => {
+  const cacheGet = (k, maxAge) => {
     try {
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(k);
       if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (Date.now() - parsed.timestamp > maxAgeMs) {
-        localStorage.removeItem(key);
-        return null;
-      }
-      return parsed.data;
-    } catch {
-      return null;
-    }
+      const p = JSON.parse(raw);
+      if (Date.now() - p.ts > maxAge) { localStorage.removeItem(k); return null; }
+      return p.data;
+    } catch { return null; }
   };
 
-  const setCache = (key, data) => {
-    try {
-      localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-    } catch {}
+  const cacheSet = (k, data) => {
+    try { localStorage.setItem(k, JSON.stringify({ data, ts: Date.now() })); } catch {}
   };
 
-  const todayKey = () => new Date().toISOString().slice(0, 10);
+  const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  // Simple Markdown Parser to render generated articles cleanly
-  const parseMarkdown = (markdown) => {
-    if (!markdown) return '';
-    let html = markdown;
+  // ─── Markdown → HTML ─────────────────────────────
+  const md = (text) => {
+    if (!text) return '';
+    let h = text;
 
-    // Convert code blocks ```js ... ```
-    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
-      return `<pre><code>${code.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
-    });
+    // Fenced code blocks first
+    h = h.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) =>
+      `<pre><code>${c.trim().replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></pre>`);
 
-    // Convert inline code `code`
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Inline code
+    h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 
-    // Convert headers ## Heading
-    html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
-    html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+    // Headers
+    h = h.replace(/^#{4}\s+(.+)$/gm, '<h4>$1</h4>');
+    h = h.replace(/^#{3}\s+(.+)$/gm, '<h3>$1</h3>');
+    h = h.replace(/^#{2}\s+(.+)$/gm, '<h2>$1</h2>');
+    h = h.replace(/^#{1}\s+(.+)$/gm, '<h2>$1</h2>');
 
-    // Convert lists
-    html = html.replace(/^\s*-\s+(.+)$/gm, '<li>$1</li>');
-    // Wrap consecutive <li> tags in <ul>
-    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
-    // Clean up double ul tags
-    html = html.replace(/<\/ul>\s*<ul>/g, '');
+    // Bold + italic
+    h = h.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    h = h.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    h = h.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+    h = h.replace(/_([^_\n]+)_/g, '<em>$1</em>');
 
-    // Convert bold **text**
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Unordered lists
+    h = h.replace(/^[ \t]*[-*+]\s+(.+)$/gm, '<li>$1</li>');
+    h = h.replace(/(<li>[\s\S]+?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>');
+    h = h.replace(/<\/ul>\s*<ul>/g, '');
 
-    // Convert italics *text*
-    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    // Ordered lists
+    h = h.replace(/^\d+\.\s+(.+)$/gm, '<oli>$1</oli>');
+    h = h.replace(/(<oli>[\s\S]+?<\/oli>)(?!\s*<oli>)/g, '<ol>$1</ol>');
+    h = h.replace(/<\/ol>\s*<ol>/g, '');
+    h = h.replace(/<oli>/g, '<li>').replace(/<\/oli>/g, '</li>');
 
-    // Convert paragraphs (split by double newline, wrapping non-HTML lines)
-    const paragraphs = html.split(/\n{2,}/);
-    html = paragraphs.map(p => {
-      p = p.trim();
-      if (!p) return '';
-      if (p.startsWith('<h') || p.startsWith('<pre') || p.startsWith('<ul') || p.startsWith('<ol')) {
-        return p;
-      }
-      return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+    // Links
+    h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+    // Blockquotes
+    h = h.replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>');
+    h = h.replace(/<\/blockquote>\s*<blockquote>/g, '<br>');
+
+    // Horizontal rule
+    h = h.replace(/^---+$/gm, '<hr>');
+
+    // Paragraphs — wrap non-tagged blocks
+    const blocks = h.split(/\n{2,}/);
+    h = blocks.map(block => {
+      block = block.trim();
+      if (!block) return '';
+      if (/^<(h[2-4]|ul|ol|pre|blockquote|hr)/.test(block)) return block;
+      return `<p>${block.replace(/\n/g, '<br>')}</p>`;
     }).join('');
 
-    return html;
+    return h;
   };
 
-  // ═══════════════════════════════════════════════
-  //  TOAST NOTIFICATIONS
-  // ═══════════════════════════════════════════════
-
-  const showToast = (message, type = 'error') => {
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    toastContainer.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
+  // ════════════════════════════════════════════════
+  //  TOAST
+  // ════════════════════════════════════════════════
+  const toast = (msg, type = 'error') => {
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    toastStack.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
   };
 
-  // ═══════════════════════════════════════════════
-  //  THEME MANAGER
-  // ═══════════════════════════════════════════════
-
-  const applyTheme = (theme) => {
+  // ════════════════════════════════════════════════
+  //  THEME
+  // ════════════════════════════════════════════════
+  const applyTheme = (t) => {
     const root = document.documentElement;
-    const themeIcon = themeBtn.querySelector('.btn-icon');
-
-    if (theme === 'light') {
+    if (t === 'light') {
       root.setAttribute('data-theme', 'light');
-      themeIcon.textContent = '☀️';
-    } else if (theme === 'dark') {
+      themeBtn.textContent = '○';
+    } else if (t === 'dark') {
       root.removeAttribute('data-theme');
-      themeIcon.textContent = '🌙';
+      themeBtn.textContent = '◐';
     } else {
-      // System
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (isDark) {
-        root.removeAttribute('data-theme');
-      } else {
-        root.setAttribute('data-theme', 'light');
-      }
-      themeIcon.textContent = '💻';
+      const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      dark ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', 'light');
+      themeBtn.textContent = '◑';
     }
   };
 
   themeBtn.addEventListener('click', () => {
-    if (themeMode === 'dark') {
-      themeMode = 'light';
-    } else if (themeMode === 'light') {
-      themeMode = 'system';
-    } else {
-      themeMode = 'dark';
-    }
-    localStorage.setItem('devpulse-theme', themeMode);
+    themeMode = themeMode === 'dark' ? 'light' : themeMode === 'light' ? 'system' : 'dark';
+    localStorage.setItem('dp-theme', themeMode);
     applyTheme(themeMode);
-    showToast(`Theme switched to: ${themeMode}`, 'success');
+    toast(`Theme: ${themeMode}`, 'success');
   });
 
-  // Listen to system theme changes if set to system
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (themeMode === 'system') {
-      applyTheme('system');
-    }
+    if (themeMode === 'system') applyTheme('system');
   });
 
-  // ═══════════════════════════════════════════════
-  //  BOOKMARKS MANAGER
-  // ═══════════════════════════════════════════════
-
+  // ════════════════════════════════════════════════
+  //  BOOKMARKS
+  // ════════════════════════════════════════════════
   const getBookmarks = () => {
-    try {
-      return JSON.parse(localStorage.getItem('devpulse-bookmarks')) || [];
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem('dp-bookmarks')) || []; } catch { return []; }
   };
 
-  const isBookmarked = (articleId) => {
-    const bookmarks = getBookmarks();
-    return bookmarks.some(b => b.id === articleId || b.url === articleId);
-  };
+  const isBookmarked = (id) => getBookmarks().some(b => (b.id || b.url) === id);
 
   const toggleBookmark = (article, e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    let bookmarks = getBookmarks();
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    let bks = getBookmarks();
     const id = article.id || article.url;
-
     if (isBookmarked(id)) {
-      bookmarks = bookmarks.filter(b => b.id !== id && b.url !== id);
-      localStorage.setItem('devpulse-bookmarks', JSON.stringify(bookmarks));
-      showToast('Removed from Saved bookmarks', 'success');
+      bks = bks.filter(b => (b.id || b.url) !== id);
+      toast('Removed from saved', 'success');
     } else {
-      bookmarks.push(article);
-      localStorage.setItem('devpulse-bookmarks', JSON.stringify(bookmarks));
-      showToast('Saved to Bookmarks', 'success');
+      bks.push(article);
+      toast('Saved to bookmarks', 'success');
     }
-
-    // Refresh UI
+    localStorage.setItem('dp-bookmarks', JSON.stringify(bks));
+    updateStrip();
     renderFeed();
   };
 
-  // ═══════════════════════════════════════════════
-  //  DESKTOP NOTIFICATIONS
-  // ═══════════════════════════════════════════════
-
-  const checkNotificationPermission = async () => {
-    if (!('Notification' in window)) return false;
-    if (Notification.permission === 'granted') return true;
-    if (Notification.permission !== 'denied') {
-      const permission = await Notification.requestPermission();
-      return permission === 'granted';
-    }
-    return false;
-  };
-
-  notificationBtn.addEventListener('click', async () => {
+  // ════════════════════════════════════════════════
+  //  NOTIFICATIONS
+  // ════════════════════════════════════════════════
+  notifBtn.addEventListener('click', async () => {
     notificationsEnabled = !notificationsEnabled;
-    localStorage.setItem('devpulse-notifications', notificationsEnabled);
-
+    localStorage.setItem('dp-notifs', notificationsEnabled);
     if (notificationsEnabled) {
-      const allowed = await checkNotificationPermission();
-      if (allowed) {
-        showToast('Desktop notifications enabled!', 'success');
-        notificationBtn.querySelector('.btn-icon').textContent = '🔔';
-        notificationBadge.style.display = 'none';
-      } else {
-        notificationsEnabled = false;
-        localStorage.setItem('devpulse-notifications', 'false');
-        showToast('Notification permission denied by browser.');
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        await Notification.requestPermission();
       }
+      toast('Notifications enabled', 'success');
     } else {
-      showToast('Notifications disabled.');
-      notificationBtn.querySelector('.btn-icon').textContent = '🔕';
-      notificationBadge.style.display = 'none';
+      toast('Notifications disabled');
     }
+    notifBadge.style.display = 'none';
   });
 
-  const triggerDesktopNotification = (title, body, url) => {
-    if (!notificationsEnabled || Notification.permission !== 'granted') return;
-    try {
-      const n = new Notification(`⚡ DevPulse Breaking: ${title}`, {
-        body: body,
-        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">⚡</text></svg>'
-      });
-      n.onclick = () => {
-        window.open(url, '_blank');
-        n.close();
-      };
-    } catch (e) {
-      console.warn("Desktop notifications not supported in this environment:", e);
-    }
-  };
-
-  const scanForBreakingNews = (articles) => {
-    const notified = JSON.parse(localStorage.getItem('devpulse-notified-ids')) || [];
-    let foundNewBreaking = false;
-
-    articles.forEach(art => {
-      const id = art.id || art.url;
-      const points = art.points || art.score || art.positive_reactions_count || 0;
-
-      // Breaking if HN has > 400 points or Dev.to has > 150 likes
-      const isHnBreaking = art.source === 'hackernews' && points > 400;
-      const isDevToBreaking = art.source === 'devto' && points > 150;
-
-      if ((isHnBreaking || isDevToBreaking) && !notified.includes(id)) {
+  const scanBreaking = (articles) => {
+    const notified = JSON.parse(localStorage.getItem('dp-notified') || '[]');
+    let hasNew = false;
+    articles.forEach(a => {
+      const id = a.id || a.url;
+      const pts = a.points || a.score || a.positive_reactions_count || 0;
+      const breaking = (a.source === 'hackernews' && pts > 400) || (a.source === 'devto' && pts > 150);
+      if (breaking && !notified.includes(id)) {
         notified.push(id);
-        triggerDesktopNotification(art.title, `Viral on ${art.source} with ${points} points! Read now.`, art.url || art.link);
-        foundNewBreaking = true;
+        hasNew = true;
+        if (notificationsEnabled && Notification.permission === 'granted') {
+          try { new Notification(`⚡ DevPulse: ${a.title}`, { body: `${pts} points on ${a.source}` }); } catch {}
+        }
       }
     });
-
-    localStorage.setItem('devpulse-notified-ids', JSON.stringify(notified));
-
-    if (foundNewBreaking && !notificationsEnabled) {
-      notificationBadge.style.display = 'block';
-    }
+    localStorage.setItem('dp-notified', JSON.stringify(notified));
+    if (hasNew && !notificationsEnabled) notifBadge.style.display = 'block';
   };
 
-  // ═══════════════════════════════════════════════
-  //  SKELETON LOADER
-  // ═══════════════════════════════════════════════
-
-  const renderSkeletons = (count = 6) => {
-    feedEl.innerHTML = Array.from({ length: count }, () => `
-      <div class="skeleton-card">
-        <div class="skeleton-line short"></div>
-        <div class="skeleton-line long"></div>
-        <div class="skeleton-line medium"></div>
-        <div class="skeleton-line xshort"></div>
-      </div>
-    `).join('');
-  };
-
-  // ═══════════════════════════════════════════════
-  //  FEED FETCHING
-  // ═══════════════════════════════════════════════
-
-  const fetchFeed = async (endpoint, source) => {
+  // ════════════════════════════════════════════════
+  //  FETCH ALL FEEDS
+  // ════════════════════════════════════════════════
+  const fetchFeed = async (url, source) => {
     try {
-      const res = await fetch(endpoint);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
-      return (data.articles || data || []).map((a) => ({ ...a, source }));
+      return (data.articles || data || []).map(a => ({ ...a, source: a.source || source }));
     } catch (err) {
-      console.warn(`Failed to fetch ${source}:`, err);
-      showToast(`Unable to load ${source}`);
+      console.warn(`Feed ${source} failed:`, err.message);
       return [];
     }
   };
 
-  const fetchArticles = async () => {
+  const fetchDevpulseArticles = async () => {
     try {
       const res = await fetch('/api/articles');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return;
       const data = await res.json();
       devpulseArticles = data.articles || [];
-    } catch (err) {
-      console.warn('Failed to load DevPulse articles from Netlify Blobs:', err);
-      showToast('Unable to load premium generated articles');
-    }
+    } catch {}
   };
 
-  const fetchAllFeeds = async () => {
-    renderSkeletons();
+  const fetchAll = async () => {
+    renderSkeletons(12);
 
-    const [devto, ai, hn] = await Promise.all([
+    const [devto, ai, hn, lobsters, github] = await Promise.all([
       fetchFeed('/api/devto', 'devto'),
       fetchFeed('/api/ai-news', 'ai-news'),
       fetchFeed('/api/hn', 'hackernews'),
-      fetchArticles() // Pre-fetch DevPulse Original articles in background
+      fetchFeed('/api/lobsters', 'lobsters'),
+      fetchFeed('/api/github-trending', 'github'),
+      fetchDevpulseArticles(),
     ]);
 
-    allArticles = [...devto, ...ai, ...hn].sort((a, b) => {
+    allArticles = [...hn, ...devto, ...ai, ...lobsters, ...github].sort((a, b) => {
       const tA = new Date(a.time || a.published_at || a.date || 0).getTime();
       const tB = new Date(b.time || b.published_at || b.date || 0).getTime();
       return tB - tA;
     });
 
-    scanForBreakingNews(allArticles);
+    scanBreaking(allArticles);
+    updateStrip();
     renderFeed();
-    renderDashboardStats(); // Auto-update dashboard right panel
   };
 
-  // ═══════════════════════════════════════════════
-  //  CARD RENDERING
-  // ═══════════════════════════════════════════════
+  const updateStrip = () => {
+    const hn  = allArticles.filter(a => a.source === 'hackernews').length;
+    const dt  = allArticles.filter(a => a.source === 'devto').length;
+    const ai  = allArticles.filter(a => a.source === 'ai-news').length;
+    const lbs = allArticles.filter(a => a.source === 'lobsters').length;
+    const gh  = allArticles.filter(a => a.source === 'github').length;
+    const sv  = getBookmarks().length;
 
-  const sourceConfig = {
-    hackernews: { label: 'HackerNews', cssClass: 'hn' },
-    devto: { label: 'Dev.to', cssClass: 'devto' },
-    'ai-news': { label: 'TensorFeed', cssClass: 'ai' },
+    stripTotal.textContent    = `${allArticles.length} stories`;
+    stripHn.textContent       = `△ HN ${hn}`;
+    stripDevto.textContent    = `⬡ Dev.to ${dt}`;
+    stripAi.textContent       = `◉ AI ${ai}`;
+    stripLobsters.textContent = `⊛ Lobsters ${lbs}`;
+    stripGithub.textContent   = `⌥ GitHub ${gh}`;
+    stripSaved.textContent    = `◇ Saved ${sv}`;
   };
 
+  // ════════════════════════════════════════════════
+  //  SKELETON
+  // ════════════════════════════════════════════════
+  const renderSkeletons = (n = 12) => {
+    feedEl.innerHTML = Array.from({ length: n }, (_, i) => `
+      <div class="skel-card" style="animation-delay:${i * 35}ms">
+        <div class="skel-line s"></div>
+        <div class="skel-line xl"></div>
+        <div class="skel-line l"></div>
+        <div class="skel-line m"></div>
+      </div>`).join('');
+  };
+
+  // ════════════════════════════════════════════════
+  //  SOURCE CONFIG
+  // ════════════════════════════════════════════════
+  const SOURCE_CFG = {
+    hackernews: { label: 'HN',       cls: 'hn'       },
+    devto:      { label: 'Dev.to',   cls: 'devto'    },
+    'ai-news':  { label: 'AI/ML',    cls: 'ai'       },
+    lobsters:   { label: 'Lobsters', cls: 'lobsters' },
+    github:     { label: 'GitHub',   cls: 'github'   },
+  };
+
+  // ════════════════════════════════════════════════
+  //  RENDER FEED
+  // ════════════════════════════════════════════════
   const renderFeed = () => {
     feedEl.innerHTML = '';
 
-    // A. DEVPULSE PREMIUM ARTICLES VIEW
+    // ── DevPulse Articles tab ──
     if (activeFilter === 'articles') {
-      const filtered = devpulseArticles.filter(art => {
+      const filtered = devpulseArticles.filter(a => {
         if (!searchQuery) return true;
         const q = searchQuery.toLowerCase();
-        return art.title.toLowerCase().includes(q) ||
-               art.excerpt.toLowerCase().includes(q) ||
-               (art.tags && art.tags.some(t => t.toLowerCase().includes(q)));
+        return (a.title || '').toLowerCase().includes(q) ||
+               (a.excerpt || '').toLowerCase().includes(q) ||
+               (a.tags || []).some(t => t.toLowerCase().includes(q));
       });
 
       if (filtered.length === 0) {
-        feedEl.innerHTML = `<div class="feed-error">No premium generated articles found. Search matches nothing or none have been generated yet!</div>`;
+        feedEl.innerHTML = `<div class="feed-notice">
+          <div class="feed-notice-title">No AI Articles Yet</div>
+          <div class="feed-notice-sub">Open any story and click "Read →" — DevPulse will generate and save a full article</div>
+        </div>`;
         return;
       }
 
-      feedEl.innerHTML = filtered.map((article, i) => {
-        const coverImg = article.coverImage
-          ? `<img class="article-card-cover" src="${article.coverImage}" alt="${article.title}" loading="lazy">`
-          : `<div class="article-card-placeholder">📝</div>`;
-
-        const dateStr = article.generatedAt ? new Date(article.generatedAt).toLocaleDateString() : '';
-
+      feedEl.innerHTML = filtered.map((a, i) => {
+        const cover = a.coverImage
+          ? `<div class="card-cover-wrap"><img class="card-cover" src="${esc(a.coverImage)}" alt="" loading="lazy"></div>`
+          : '';
+        const date = a.generatedAt ? new Date(a.generatedAt).toLocaleDateString() : '';
         return `
-          <div class="article-card" style="animation-delay:${i < 8 ? i * 50 : 0}ms">
-            <div class="article-card-cover-container">
-              ${coverImg}
-            </div>
-            <div class="article-card-body">
-              <div>
-                <div class="article-card-meta">
-                  <span class="article-original-badge">DevPulse Original</span>
-                  <span>${article.readTime || 2} min read • ${dateStr}</span>
-                </div>
-                <h3 class="article-card-title">${article.title}</h3>
-                <p class="article-card-excerpt">${article.excerpt}</p>
-              </div>
-              <div class="article-card-bottom">
-                <button class="btn btn-trend read-article-btn" data-id="${article.id}">
-                  📖 Read Full Article
-                </button>
-                <span class="model-badge">⚡ ${article.model || 'gemini-2.5-flash'}</span>
+          <div class="article-card" data-dpid="${esc(a.id)}" style="animation-delay:${Math.min(i,10)*40}ms">
+            <div class="card-header">
+              <div class="card-meta">
+                <span class="dp-badge">✦ DevPulse Original</span>
+                <span class="card-time">${a.readTime || 2} min · ${date}</span>
               </div>
             </div>
-          </div>
-        `;
+            ${cover}
+            <div class="card-title">${esc(a.title)}</div>
+            <div class="card-desc">${esc(a.excerpt || '')}</div>
+            <div class="card-footer">
+              <span class="cstat"><span class="cstat-icon">⚡</span>${esc(a.model || 'AI')}</span>
+              <div class="card-actions">
+                <button class="action-btn read dp-read-btn" data-dpid="${esc(a.id)}">Read Article →</button>
+              </div>
+            </div>
+          </div>`;
       }).join('');
 
-      // Attach article reading click handlers
-      feedEl.querySelectorAll('.read-article-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = btn.getAttribute('data-id');
-          openArticleReader(id);
-        });
+      feedEl.querySelectorAll('.dp-read-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); openDevpulseArticle(btn.dataset.dpid); });
       });
-
+      feedEl.querySelectorAll('.article-card').forEach(card => {
+        card.addEventListener('click', () => openDevpulseArticle(card.dataset.dpid));
+      });
       return;
     }
 
-    // B. BOOKMARKS/SAVED VIEW
-    let feedSource = allArticles;
+    // ── Standard feed ──
+    let source = allArticles;
     if (activeFilter === 'bookmarks') {
-      feedSource = getBookmarks();
+      source = getBookmarks();
     } else if (activeFilter !== 'all') {
-      feedSource = allArticles.filter((a) => a.source === activeFilter);
+      source = allArticles.filter(a => a.source === activeFilter);
     }
 
-    // Apply Search Query filtering
-    const filtered = feedSource.filter(art => {
+    const filtered = source.filter(a => {
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
-      const titleMatch = (art.title || '').toLowerCase().includes(q);
-      const authorMatch = (art.author || art.by || '').toLowerCase().includes(q);
-      const tagMatch = art.tags && art.tags.some(t => t.toLowerCase().includes(q));
-      return titleMatch || authorMatch || tagMatch;
+      return (a.title || '').toLowerCase().includes(q) ||
+             (a.author || a.by || '').toLowerCase().includes(q) ||
+             (a.tags || a.tag_list || []).some(t => t.toLowerCase().includes(q));
     });
 
     if (filtered.length === 0) {
-      feedEl.innerHTML = `<div class="feed-error">No articles found matching your query. Try clearing your search or filter.</div>`;
+      feedEl.innerHTML = `<div class="feed-notice">
+        <div class="feed-notice-title">${activeFilter === 'bookmarks' ? 'Nothing Saved' : 'No Stories Found'}</div>
+        <div class="feed-notice-sub">${activeFilter === 'bookmarks' ? 'Bookmark any story to read later' : 'Try a different filter or search query'}</div>
+      </div>`;
       return;
     }
 
-    feedEl.innerHTML = filtered.map((article, i) => {
-      const src = sourceConfig[article.source] || { label: article.source, cssClass: '' };
-      const title = article.title || 'Untitled';
-      const url = article.url || article.link || '#';
-      const author = article.author || article.by || article.user?.name || '';
-      const dateStr = article.time || article.published_at || article.date || '';
-      const points = article.points || article.score || article.positive_reactions_count || 0;
-      const comments = article.comments_count ?? article.descendants ?? article.num_comments ?? 0;
-      const tags = article.tags || article.tag_list || [];
-      const artId = article.id || article.url;
+    feedEl.innerHTML = filtered.map((a, i) => {
+      const cfg    = SOURCE_CFG[a.source] || { label: a.source, cls: '' };
+      const id     = a.id || a.url;
+      const url    = a.url || a.link || '#';
+      const author = a.author || a.by || '';
+      const date   = a.time || a.published_at || a.date || '';
+      const pts    = a.points || a.score || a.positive_reactions_count || 0;
+      const cmnts  = a.comments_count ?? a.descendants ?? 0;
+      const tags   = (a.tags || a.tag_list || []).slice(0, 4);
+      const booked = isBookmarked(id);
 
-      const tagsHtml = Array.isArray(tags) && tags.length
-        ? `<div class="card-tags">${tags.slice(0, 4).map((t) => `<span class="tag">#${t}</span>`).join('')}</div>`
+      const coverHtml = a.cover_image
+        ? `<div class="card-cover-wrap"><img class="card-cover" src="${esc(a.cover_image)}" alt="" loading="lazy"></div>`
         : '';
 
-      const isBooked = isBookmarked(artId);
-
-      const coverImgHtml = article.cover_image
-        ? `<div class="feed-card-cover-container">
-             <img class="feed-card-cover" src="${article.cover_image}" alt="${title}" loading="lazy">
-           </div>`
+      const descHtml = (a.description || a.summary)
+        ? `<div class="card-desc">${esc((a.description || a.summary).slice(0, 180))}</div>`
         : '';
 
-      const descHtml = (article.description || article.summary)
-        ? `<p class="feed-card-description">${article.description || article.summary}</p>`
+      const tagsHtml = tags.length
+        ? `<div class="card-tags">${tags.map(t => `<span class="ctag">#${esc(t)}</span>`).join('')}</div>`
         : '';
+
+      // GitHub repos show stars prominently
+      const statsHtml = a.source === 'github'
+        ? `<span class="cstat"><span class="cstat-icon">★</span>${fmt(pts)}</span>
+           ${a.language ? `<span class="cstat"><span class="cstat-icon">◈</span>${esc(a.language)}</span>` : ''}`
+        : `<span class="cstat"><span class="cstat-icon">▲</span>${fmt(pts)}</span>
+           <span class="cstat"><span class="cstat-icon">💬</span>${fmt(cmnts)}</span>`;
 
       return `
-        <article class="feed-card" data-source="${article.source}" style="animation-delay:${i < 8 ? i * 50 : 0}ms">
-          <div class="card-top">
-            <div class="card-meta-left">
-              <span class="source-badge ${src.cssClass}">${src.label}</span>
-              ${author ? `<span class="card-author">by <strong>${author}</strong></span>` : ''}
+        <article class="feed-card" data-source="${esc(a.source)}" data-idx="${i}"
+                 style="animation-delay:${Math.min(i,10)*40}ms">
+          <div class="card-header">
+            <div class="card-meta">
+              <span class="src-badge ${cfg.cls}">${cfg.label}</span>
+              ${author ? `<span class="card-author">${esc(author)}</span>` : ''}
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span class="card-time">${timeAgo(dateStr)}</span>
-              <button class="bookmark-btn ${isBooked ? 'active' : ''}" data-index="${i}" title="${isBooked ? 'Unsave Bookmark' : 'Save Bookmark'}">
-                ${isBooked ? '🔖' : '📑'}
-              </button>
+            <div class="card-right">
+              <span class="card-time">${timeAgo(date)}</span>
+              <button class="bkmark-btn ${booked ? 'active' : ''}" data-idx="${i}"
+                      title="${booked ? 'Unsave' : 'Save'}">${booked ? '◆' : '◇'}</button>
             </div>
           </div>
-          ${coverImgHtml}
-          <h2 class="card-title">${title}</h2>
+          ${coverHtml}
+          <div class="card-title">${esc(a.title || 'Untitled')}</div>
           ${tagsHtml}
           ${descHtml}
-          <div class="card-bottom">
-            <div class="card-stats">
-              <span class="stat"><span class="stat-icon">▲</span> ${formatNumber(points)}</span>
-              <span class="stat"><span class="stat-icon">💬</span> ${formatNumber(comments)}</span>
-            </div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn-summarize" data-title="${title.replace(/"/g, '&quot;')}" data-url="${url}">
-                <span class="sparkle">✨</span> Summarize
-              </button>
-              ${article.source === 'devto' 
-                ? `<button class="btn btn-trend read-devto-btn" data-id="${article.id}">
-                     📖 Read Article
-                   </button>` 
-                : ''
-              }
+          <div class="card-footer">
+            <div class="card-stats">${statsHtml}</div>
+            <div class="card-actions">
+              <button class="action-btn summarize-btn"
+                      data-title="${esc(a.title)}" data-url="${esc(url)}">✦ Summary</button>
+              <button class="action-btn read open-reader-btn" data-idx="${i}">Read →</button>
             </div>
           </div>
         </article>`;
     }).join('');
 
-    // Attach summarize, read-devto, and bookmarks click listeners
-    feedEl.querySelectorAll('.btn-summarize').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const t = btn.getAttribute('data-title');
-        const u = btn.getAttribute('data-url');
-        handleSummarize(t, u);
-      });
-    });
-
-    feedEl.querySelectorAll('.read-devto-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-id');
-        openArticleReader(id, true);
-      });
-    });
-
-    feedEl.querySelectorAll('.bookmark-btn').forEach((btn) => {
+    // Bind events
+    feedEl.querySelectorAll('.bkmark-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const idx = parseInt(btn.getAttribute('data-index'), 10);
-        const article = filtered[idx];
-        toggleBookmark(article, e);
+        toggleBookmark(filtered[parseInt(btn.dataset.idx)], e);
+      });
+    });
+
+    feedEl.querySelectorAll('.summarize-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleSummarize(btn.dataset.title, btn.dataset.url);
+      });
+    });
+
+    feedEl.querySelectorAll('.open-reader-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openArticleReader(filtered[parseInt(btn.dataset.idx)]);
+      });
+    });
+
+    feedEl.querySelectorAll('.feed-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        openArticleReader(filtered[parseInt(card.dataset.idx)]);
       });
     });
   };
 
-  // ─── Search input real-time handler ───
-  let searchTimeout;
+  // ─── Search ──────────────────────────────────────
+  let searchTimer;
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value;
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => renderFeed(), 300);
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(renderFeed, 280);
   });
 
-  // Short-cut handlers (Ctrl+K or '/' to focus search)
   document.addEventListener('keydown', (e) => {
     if (e.key === '/' && document.activeElement !== searchInput) {
-      e.preventDefault();
-      searchInput.focus();
-      searchInput.select();
+      e.preventDefault(); searchInput.focus(); searchInput.select();
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      searchInput.focus();
-      searchInput.select();
-    } else if (e.key === 'Escape' && document.activeElement === searchInput) {
-      searchInput.value = '';
-      searchQuery = '';
-      searchInput.blur();
-      renderFeed();
+      e.preventDefault(); searchInput.focus(); searchInput.select();
+    } else if (e.key === 'Escape') {
+      if (document.activeElement === searchInput) {
+        searchInput.value = ''; searchQuery = ''; searchInput.blur(); renderFeed();
+      }
+      closeReader();
+      closeModal();
     }
   });
 
-  // ═══════════════════════════════════════════════
-  //  FILTER BUTTONS
-  // ═══════════════════════════════════════════════
-
-  filterBtns.forEach((btn) => {
+  // ─── Nav Filter Buttons ───────────────────────────
+  navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      filterBtns.forEach((b) => b.classList.remove('active'));
+      navBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeFilter = btn.dataset.source;
 
       if (activeFilter === 'articles') {
-        fetchArticles().then(renderFeed);
+        fetchDevpulseArticles().then(renderFeed);
       } else {
         renderFeed();
+      }
+
+      if (window.innerWidth <= 768) {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('mob-overlay').classList.remove('open');
       }
     });
   });
 
-  // ═══════════════════════════════════════════════
-  //  MODALS OPEN & CLOSE
-  // ═══════════════════════════════════════════════
+  // ════════════════════════════════════════════════
+  //  ARTICLE READER
+  //  Strategy:
+  //   1. Dev.to → native API (instant, rich markdown)
+  //   2. All others → /api/scrape (fast, real content, ~1-3s)
+  //   3. If scrape too short or HN discussion → AI generate (30s, shows generating state)
+  //   4. "Generate with AI" button always available for enhancement
+  // ════════════════════════════════════════════════
 
-  const openModal = (title = 'AI Summary') => {
-    modalTitle.textContent = title;
-    modalBody.innerHTML = `<div class="loading-dots"><span></span><span></span><span></span></div>`;
-    modalModel.textContent = '';
-    modalOverlay.classList.add('open');
+  let readerCurrentArticle = null;
+
+  const openReader = () => {
+    readerOverlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    readerOverlay.scrollTop = 0;
   };
 
-  const closeModal = () => {
-    modalOverlay.classList.remove('open');
+  const closeReader = () => {
+    readerOverlay.classList.remove('open');
+    document.body.style.overflow = '';
+    readerAiBtn.style.display = 'none';
+    readerCurrentArticle = null;
   };
 
-  modalClose.addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', (e) => {
-    if (e.target === modalOverlay) closeModal();
-  });
+  readerClose.addEventListener('click', closeReader);
+  readerOverlay.addEventListener('click', (e) => { if (e.target === readerOverlay) closeReader(); });
 
-  // Article Reader Modal triggers
-  const openArticleModal = () => {
-    articleReaderBody.innerHTML = `<div class="loading-dots"><span></span><span></span><span></span></div>`;
-    articleModalOverlay.classList.add('open');
-  };
+  const setReaderMeta = (article, model, showAiBtn = false) => {
+    const cfg = SOURCE_CFG[article.source] || { label: 'DevPulse', cls: 'dp' };
+    readerBadge.textContent = cfg.label.toUpperCase();
+    readerTitle.textContent = article.title || '';
 
-  const closeArticleModal = () => {
-    articleModalOverlay.classList.remove('open');
-  };
+    const rawDate = article.generatedAt || article.published_at || article.date || article.time;
+    readerDate.textContent = rawDate ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
-  articleModalClose.addEventListener('click', closeArticleModal);
-  articleModalOverlay.addEventListener('click', (e) => {
-    if (e.target === articleModalOverlay) closeArticleModal();
-  });
+    const origUrl = article.url || article.link || article.sourceUrl || '#';
+    readerOrigLink.href = origUrl;
 
-  // Global keydown listeners for escape
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeModal();
-      closeArticleModal();
-    }
-  });
-
-  const showModalContent = (html, model = '') => {
-    modalBody.innerHTML = html;
     if (model) {
-      modalModel.textContent = `⚡ ${model}`;
-      const label = modelStatus.querySelector('.status-label');
-      if (label) label.textContent = model;
+      readerModel.textContent = `⚡ ${model}`;
+      readerModel.parentElement.style.display = '';
+    } else {
+      readerModel.parentElement.style.display = 'none';
+    }
+
+    const cover = article.coverImage || article.cover_image || '';
+    if (cover) {
+      readerCover.src = cover;
+      readerCover.alt = article.title || '';
+      readerCoverWrap.style.display = 'block';
+    } else {
+      readerCoverWrap.style.display = 'none';
+    }
+
+    readerAiBtn.style.display = showAiBtn ? 'inline-flex' : 'none';
+  };
+
+  const showReaderLoading = (article) => {
+    readerTitle.textContent = article.title || 'Loading…';
+    readerBadge.textContent = (SOURCE_CFG[article.source]?.label || 'Loading').toUpperCase();
+    readerDate.textContent = '';
+    readerReadtime.textContent = '';
+    readerModel.textContent = '';
+    readerModel.parentElement.style.display = 'none';
+    readerOrigLink.href = article.url || article.link || '#';
+    readerCoverWrap.style.display = 'none';
+    readerAiBtn.style.display = 'none';
+    readerProse.innerHTML = `
+      <div class="reader-skeleton">
+        ${Array(7).fill(0).map((_, i) =>
+          `<div class="skel-line ${['l','xl','m','l','xl','s','m'][i]}" style="animation-delay:${i*70}ms"></div>`
+        ).join('')}
+      </div>`;
+  };
+
+  const showReaderGenerating = () => {
+    readerProse.innerHTML = `
+      <div class="reader-generating">
+        <div class="gen-spinner"></div>
+        <div class="gen-label">Fetching & generating with AI…</div>
+        <div class="gen-sub">Reading source page and writing a full article</div>
+      </div>`;
+  };
+
+  const showReaderContent = (content, readTime, showAiBtn = false, article = null) => {
+    readerProse.innerHTML = md(content || '');
+    readerReadtime.textContent = readTime ? `${readTime} min read` : '';
+    readerAiBtn.style.display = showAiBtn ? 'inline-flex' : 'none';
+    if (article) readerCurrentArticle = article;
+  };
+
+  const showReaderError = (msg) => {
+    readerProse.innerHTML = `<div class="feed-notice">
+      <div class="feed-notice-title">Could Not Load</div>
+      <div class="feed-notice-sub">${esc(msg)}</div>
+      <br><div class="feed-notice-sub">Try the "Source ↗" link above to read the original.</div>
+    </div>`;
+  };
+
+  // "Generate with AI" button handler
+  readerAiBtn.addEventListener('click', async () => {
+    if (!readerCurrentArticle) return;
+    readerAiBtn.style.display = 'none';
+    showReaderGenerating();
+    await runAiGeneration(readerCurrentArticle);
+  });
+
+  // Run AI generation and display in reader
+  const runAiGeneration = async (article) => {
+    const url = article.url || article.link || '';
+    try {
+      const res = await fetch('/api/generate-article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title:  article.title,
+          url,
+          source: article.source,
+          tags:   article.tags || [],
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const merged = { ...article, coverImage: data.coverImage || article.cover_image };
+      setReaderMeta(merged, data.model, false);
+      showReaderContent(data.content || '', data.readTime, false);
+      toast('AI article generated & saved to your library', 'success');
+      fetchDevpulseArticles(); // refresh library silently
+    } catch (err) {
+      showReaderError(err.message);
     }
   };
 
-  const showModalError = (msg) => {
-    modalBody.innerHTML = `<div class="feed-error">${msg}</div>`;
+  /**
+   * openArticleReader — opens any article inline.
+   *
+   * Flow:
+   *  Dev.to  → /api/devto?id=…    (native markdown, instant)
+   *  Others  → /api/scrape        (real content, no AI needed, ~1-3s)
+   *    ├ good content (>120 chars) → show real content + optional AI button
+   *    ├ short / partial           → show what we have + AI button
+   *    └ complete failure          → show error + Source link + AI button
+   *  AI is ALWAYS optional — never auto-called on failure.
+   */
+  const openArticleReader = async (article) => {
+    openReader();
+    showReaderLoading(article);
+    readerCurrentArticle = article;
+
+    const url = article.url || article.link || '';
+
+    // ── Dev.to: native API ──────────────────────────
+    if (article.source === 'devto') {
+      try {
+        const res = await fetch(`/api/devto?id=${article.id}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const merged = { ...article, coverImage: data.coverImage || article.cover_image };
+        setReaderMeta(merged, 'dev.to native', true);
+        showReaderContent(data.content || data.body_markdown || '', data.readTime, true, article);
+        return;
+      } catch (err) {
+        console.warn('Dev.to native failed, falling back to scrape:', err.message);
+      }
+    }
+
+    // ── HN discussion page (Ask HN / Show HN) ───────
+    // These are comment threads, not article pages — scrape won't yield article text.
+    // Offer AI but don't auto-call it.
+    const isHNDiscussion = url.includes('news.ycombinator.com/item');
+    if (isHNDiscussion) {
+      setReaderMeta(article, null, true);
+      readerProse.innerHTML = `
+        <div class="feed-notice">
+          <div class="feed-notice-title">HN Discussion Thread</div>
+          <div class="feed-notice-sub">
+            This is a HackerNews discussion page — there's no article body to extract.<br><br>
+            Click <strong>Source ↗</strong> above to read the comments, or use
+            <strong>✦ Generate AI Article</strong> to get an AI-written deep-dive on this topic.
+          </div>
+        </div>`;
+      readerReadtime.textContent = '';
+      return;
+    }
+
+    // ── All sources: fast scrape first ──────────────
+    let scraped = null;
+    try {
+      const res = await fetch(`/api/scrape?url=${encodeURIComponent(url)}`);
+      if (res.ok) scraped = await res.json();
+    } catch (err) {
+      console.warn('Scrape request failed:', err.message);
+    }
+
+    // Good content — show immediately
+    if (scraped && scraped.content && scraped.content.length > 120) {
+      const merged = { ...article, coverImage: scraped.coverImage || article.cover_image || '' };
+      setReaderMeta(merged, 'Live content', true);
+      showReaderContent(scraped.content, scraped.readTime, true, article);
+      return;
+    }
+
+    // Partial content — show what we have with a note
+    if (scraped && scraped.content && scraped.content.length > 0) {
+      const merged = { ...article, coverImage: scraped.coverImage || article.cover_image || '' };
+      setReaderMeta(merged, 'Partial content', true);
+      const note = `> *Limited content extracted — the page may require JavaScript or be behind a paywall.*\n\n`;
+      showReaderContent(note + scraped.content, scraped.readTime || 1, true, article);
+      return;
+    }
+
+    // Complete scrape failure — show helpful error, offer AI
+    setReaderMeta(article, null, true);
+    readerProse.innerHTML = `
+      <div class="feed-notice">
+        <div class="feed-notice-title">Could Not Extract Content</div>
+        <div class="feed-notice-sub">
+          The page could not be scraped (may require JavaScript, login, or block bots).<br><br>
+          Try <strong>Source ↗</strong> to read the original, or click
+          <strong>✦ Generate AI Article</strong> to get an AI-written summary.
+        </div>
+      </div>`;
+    readerReadtime.textContent = '';
   };
 
-  // ═══════════════════════════════════════════════
-  //  SUMMARIZE
-  // ═══════════════════════════════════════════════
+  /** Open a saved DevPulse Original by ID */
+  const openDevpulseArticle = async (id) => {
+    const stub = devpulseArticles.find(a => a.id === id) || { title: 'Loading…', source: 'devpulse' };
+    openReader();
+    showReaderLoading(stub);
+
+    try {
+      const res = await fetch(`/api/articles?id=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const art = { ...data, url: data.sourceUrl };
+      setReaderMeta(art, data.model, false);
+      showReaderContent(data.content || '', data.readTime, false);
+    } catch (err) {
+      showReaderError(err.message);
+    }
+  };
+
+  // ════════════════════════════════════════════════
+  //  AI SUMMARY MODAL
+  // ════════════════════════════════════════════════
+  const openModal = (title) => {
+    smTitle.textContent = title;
+    smBody.innerHTML = `<div class="dots-loader"><span></span><span></span><span></span></div>`;
+    smModel.textContent = '';
+    modalVeil.classList.add('open');
+  };
+
+  const closeModal = () => modalVeil.classList.remove('open');
+
+  smClose.addEventListener('click', closeModal);
+  modalVeil.addEventListener('click', (e) => { if (e.target === modalVeil) closeModal(); });
 
   const handleSummarize = async (title, url) => {
     openModal(title);
 
-    const cacheKey = `summary_${title}`;
-    const cached = getFromCache(cacheKey, SUMMARY_CACHE_TTL);
+    const key = `sum:${title}`;
+    const cached = cacheGet(key, SUMMARY_TTL);
     if (cached) {
-      showModalContent(formatSummary(cached.summary), cached.model);
+      smBody.innerHTML = fmtSummary(cached.text);
+      smModel.textContent = cached.model ? `⚡ ${cached.model}` : '';
       return;
     }
 
@@ -692,422 +833,143 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, url, mode: 'summarize' }),
       });
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
       const data = await res.json();
-      const summary = data.summary || data.text || data.result || 'No summary returned.';
-      const model = data.model || 'gemini-2.5-flash';
-
-      setCache(cacheKey, { summary, model });
-      showModalContent(formatSummary(summary), model);
+      const text = data.summary || 'No summary returned.';
+      cacheSet(key, { text, model: data.model || '' });
+      smBody.innerHTML = fmtSummary(text);
+      smModel.textContent = data.model ? `⚡ ${data.model}` : '';
     } catch (err) {
-      console.error('Summarize error:', err);
-      showModalError('Unable to generate summary. The AI service might be temporarily unavailable — please try again later.');
+      smBody.innerHTML = `<div class="feed-notice-sub">Could not generate summary. Please try again.</div>`;
     }
   };
 
-  const formatSummary = (text) => {
-    return text
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
-      .join('');
-  };
+  const fmtSummary = (text) =>
+    text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+        .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 
-  // ═══════════════════════════════════════════════
-  //  GENERATE ARTICLE (Backend Netlify Blobs storage)
-  // ═══════════════════════════════════════════════
-
-  const handleGenerate = async (title, url, source, tags, buttonEl) => {
-    showToast('AI is writing an original premium article... Please wait.', 'success');
-    buttonEl.classList.add('generating');
-    buttonEl.innerHTML = `<span class="sparkle">⏳</span> Writing...`;
-
-    try {
-      const res = await fetch('/api/generate-article', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, url, source, tags })
-      });
-
-      buttonEl.classList.remove('generating');
-      buttonEl.innerHTML = `<span class="sparkle">✍️</span> Generate Article`;
-
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-
-      const article = await res.json();
-      showToast('Article generated successfully and saved to storage!', 'success');
-
-      // Refresh articles array
-      await fetchArticles();
-
-      // If user is on DevPulse Articles tab, re-render immediately
-      if (activeFilter === 'articles') {
-        renderFeed();
-      } else {
-        // Toggle view to the Articles tab so the user sees it immediately
-        const artBtn = Array.from(filterBtns).find(btn => btn.dataset.source === 'articles');
-        if (artBtn) {
-          artBtn.click();
-        }
-      }
-
-    } catch (err) {
-      console.error('Generate Article error:', err);
-      buttonEl.classList.remove('generating');
-      buttonEl.innerHTML = `<span class="sparkle">✍️</span> Generate Article`;
-      showToast('Failed to auto-write article. AI studio limit reached.');
-    }
-  };
-
-  // Fetch and display full article details in Reader Modal
-  const openArticleReader = async (articleId, isDevTo = false) => {
-    openArticleModal();
-
-    try {
-      const endpoint = isDevTo ? `/api/devto?id=${articleId}` : `/api/articles?id=${articleId}`;
-      const res = await fetch(endpoint);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const article = await res.json();
-
-      // Show cover image if it exists, otherwise hide container
-      if (article.coverImage) {
-        articleCover.src = article.coverImage;
-        articleCover.style.display = 'block';
-        articleCoverContainer.style.display = 'block';
-      } else {
-        articleCover.style.display = 'none';
-        articleCoverContainer.style.display = 'none';
-      }
-
-      articleSourceBadge.textContent = (article.source || 'DevPulse').toUpperCase();
-      articleSourceBadge.className = `source-badge ${article.source || 'hn'}`;
-      articleReadtime.textContent = `⚡ ${article.readTime || 3} min read`;
-      articleDate.textContent = article.generatedAt ? new Date(article.generatedAt).toLocaleDateString() : '';
-      articleReaderTitle.textContent = article.title;
-
-      // Parse Markdown body to HTML
-      const bodyContent = article.content || article.body_html || article.body_markdown || '';
-      articleReaderBody.innerHTML = parseMarkdown(bodyContent);
-
-      articleSourceLink.href = article.sourceUrl || '#';
-      articleModelBadge.textContent = `Model: ${article.model || 'gemini-2.5-flash'}`;
-
-    } catch (err) {
-      console.error('Failed to load full article:', err);
-      articleReaderBody.innerHTML = `<div class="feed-error">Could not fetch article details. Try again.</div>`;
-    }
-  };
-
-  // ═══════════════════════════════════════════════
-  //  RIGHT PANEL DASHBOARD RENDERER
-  // ═══════════════════════════════════════════════
-  
-  const renderDashboardStats = () => {
-    if (!dashboardBody) return;
-    
-    const devtoCount = allArticles.filter(a => a.source === 'devto').length;
-    const aiCount = allArticles.filter(a => a.source === 'ai-news').length;
-    const hnCount = allArticles.filter(a => a.source === 'hackernews').length;
-    const generatedCount = devpulseArticles.length;
-    const bookmarkCount = getBookmarks().length;
-    const totalFeedCount = allArticles.length;
-
-    // Aggregate tags
-    const tagCounts = {};
-    allArticles.forEach(a => {
-      const tags = a.tags || a.tag_list || [];
-      tags.forEach(tag => {
-        const clean = tag.toLowerCase().trim();
-        tagCounts[clean] = (tagCounts[clean] || 0) + 1;
-      });
-    });
-
-    // Sort tags
-    const topTags = Object.entries(tagCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8);
-
-    // Calculate source percentages
-    const maxVal = Math.max(devtoCount, aiCount, hnCount, 1);
-    const devtoPct = Math.round((devtoCount / maxVal) * 100);
-    const aiPct = Math.round((aiCount / maxVal) * 100);
-    const hnPct = Math.round((hnCount / maxVal) * 100);
-
-    dashboardBody.innerHTML = \`
-      <div class="db-grid">
-        <div class="db-card">
-          <div class="db-card-val">\${totalFeedCount}</div>
-          <div class="db-card-lbl">Feed Stories</div>
-        </div>
-        <div class="db-card">
-          <div class="db-card-val">\${generatedCount}</div>
-          <div class="db-card-lbl">AI Originals</div>
-        </div>
-        <div class="db-card">
-          <div class="db-card-val">\${bookmarkCount}</div>
-          <div class="db-card-lbl">Bookmarked</div>
-        </div>
-      </div>
-
-      <div class="db-section">
-        <h4>📦 Feed Sources Density</h4>
-
-        <div class="db-bar-item">
-          <div class="db-bar-lbls">
-            <span>Dev.to articles</span>
-            <span>\${devtoCount} stories</span>
-          </div>
-          <div class="db-bar-track">
-            <div class="db-bar-fill" style="width: \${devtoPct}%; background: var(--accent-purple);"></div>
-          </div>
-        </div>
-
-        <div class="db-bar-item">
-          <div class="db-bar-lbls">
-            <span>TensorFeed AI news</span>
-            <span>\${aiCount} stories</span>
-          </div>
-          <div class="db-bar-track">
-            <div class="db-bar-fill" style="width: \${aiPct}%; background: var(--accent-pink);"></div>
-          </div>
-        </div>
-
-        <div class="db-bar-item">
-          <div class="db-bar-lbls">
-            <span>HackerNews stories</span>
-            <span>\${hnCount} stories</span>
-          </div>
-          <div class="db-bar-track">
-            <div class="db-bar-fill" style="width: \${hnPct}%; background: var(--accent-cyan);"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="db-section">
-        <h4>🏷️ Trending Topics Cloud</h4>
-        <div class="db-tags-cloud">
-          \${topTags.length > 0
-            ? topTags.map(([tag, count]) => \`<span class="db-tag">#\${tag} (\${count})</span>\`).join('')
-            : '<span class="card-time">No trending tags detected yet.</span>'
-          }
-        </div>
-      </div>
-
-      <div class="db-section">
-        <h4>⚡ AI Engine Pool Health</h4>
-        <p style="font-size: 13px; color: var(--text-secondary);">
-          Currently executing with automatic **Multi-Key Gemini Rotator** (failover to Groq Llama 3.3).
-          Models in rotation pool: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, llama-3.3-70b.
-        </p>
-      </div>
-    \`;
-  };
-
-
-
-  // ═══════════════════════════════════════════════
-  //  MODEL STATUS
-  // ═══════════════════════════════════════════════
-
-  const updateModelStatus = async () => {
+  // ════════════════════════════════════════════════
+  //  AI STATUS
+  // ════════════════════════════════════════════════
+  const updateStatus = async () => {
     try {
       const res = await fetch('/api/status');
       if (!res.ok) return;
       const data = await res.json();
-      const label = modelStatus.querySelector('.status-label');
-      if (data.model && label) {
-        label.textContent = `${data.model} (${data.configuredGeminiKeys} keys)`;
+      if (data.model && statusText) {
+        statusText.textContent = `${data.model} (${data.configuredGeminiKeys}k)`;
       }
     } catch {}
   };
 
-  // ═══════════════════════════════════════════════
-  //  INIT
-  // ═══════════════════════════════════════════════
+  // ════════════════════════════════════════════════
+  //  CHAT WIDGET
+  // ════════════════════════════════════════════════
+  const initChat = () => {
+    const fab      = document.getElementById('chat-fab');
+    const drawer   = document.getElementById('chat-drawer');
+    const closeBtn = document.getElementById('chat-close');
+    const input    = document.getElementById('chat-input');
+    const sendBtn  = document.getElementById('chat-send');
+    const messages = document.getElementById('chat-messages');
+    const quickBtns= document.querySelectorAll('.quick-btn');
+    let busy = false;
 
-  const init = () => {
-    applyTheme(themeMode);
-    
-    // Set notification button bell status
-    if (notificationsEnabled) {
-      notificationBtn.querySelector('.btn-icon').textContent = '🔔';
-    } else {
-      notificationBtn.querySelector('.btn-icon').textContent = '🔕';
-    }
+    const openChat   = () => { drawer.classList.add('open'); input.focus(); notifBadge.style.display = 'none'; };
+    const closeChatW = () => drawer.classList.remove('open');
 
-    fetchAllFeeds();
-    updateModelStatus();
+    fab.addEventListener('click', () => drawer.classList.contains('open') ? closeChatW() : openChat());
+    closeBtn.addEventListener('click', closeChatW);
 
-    // Register service worker for PWA offline utility
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then(reg => console.log('DevPulse ServiceWorker registered with scope:', reg.scope))
-          .catch(err => console.warn('DevPulse ServiceWorker registration failed:', err));
-      });
-    }
-
-    // Auto-refresh
-    setInterval(() => {
-      fetchAllFeeds();
-    }, REFRESH_INTERVAL);
-
-    // Initialize AI Chat Widget
-    initChatWidget();
-
-    // Mobile sidebar toggle
-    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-    const mobileOverlay = document.getElementById('mobile-overlay');
-    const sidebarEl = document.querySelector('.sidebar');
-    if (mobileMenuBtn && sidebarEl) {
-      mobileMenuBtn.addEventListener('click', () => {
-        sidebarEl.classList.toggle('open');
-        if (mobileOverlay) mobileOverlay.classList.toggle('open');
-      });
-      if (mobileOverlay) {
-        mobileOverlay.addEventListener('click', () => {
-          sidebarEl.classList.remove('open');
-          mobileOverlay.classList.remove('open');
-        });
-      }
-      // Close sidebar when filter button is clicked on mobile
-      filterBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-          if (window.innerWidth <= 768) {
-            sidebarEl.classList.remove('open');
-            if (mobileOverlay) mobileOverlay.classList.remove('open');
-          }
-        });
-      });
-    }
-  };
-
-  // ═══════════════════════════════════════════════
-  //  AI CHAT WIDGET CONTROLLER
-  // ═══════════════════════════════════════════════
-
-  const initChatWidget = () => {
-    const toggleBtn = document.getElementById('chat-toggle-btn');
-    const widget = document.getElementById('chat-widget');
-    const closeBtn = document.getElementById('chat-close-btn');
-    const sendBtn = document.getElementById('chat-send-btn');
-    const inputField = document.getElementById('chat-input-field');
-    const msgsContainer = document.getElementById('chat-messages-container');
-    const quickBtns = document.querySelectorAll('.quick-q-btn');
-
-    let isTyping = false;
-
-    const toggleChat = () => {
-      widget.classList.toggle('open');
-      if (widget.classList.contains('open')) {
-        inputField.focus();
-        // Clear notifications badge if opened
-        notificationBadge.style.display = 'none';
-      }
+    const addBubble = (text, who) => {
+      const div = document.createElement('div');
+      div.className = `chat-bubble ${who}`;
+      div.innerHTML = who === 'ai' ? md(text) : esc(text);
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
     };
 
-    toggleBtn.addEventListener('click', toggleChat);
-    closeBtn.addEventListener('click', () => widget.classList.remove('open'));
-
-    // Gathers currently visible feed headline titles for rich technical context
-    const getChatContext = () => {
-      if (allArticles.length === 0) return 'No news headlines loaded yet.';
-      return allArticles
-        .slice(0, 10)
-        .map(art => `- ${art.title} (${art.source})`)
-        .join('\n');
+    const addTyping = () => {
+      const div = document.createElement('div');
+      div.className = 'chat-bubble ai';
+      div.innerHTML = `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
     };
 
-    const appendMessage = (text, sender = 'ai') => {
-      const msg = document.createElement('div');
-      msg.className = `chat-msg ${sender}`;
-      
-      if (sender === 'ai') {
-        // AI responses are formatted in Markdown, parse it!
-        msg.innerHTML = parseMarkdown(text);
-      } else {
-        msg.textContent = text;
-      }
-      
-      msgsContainer.appendChild(msg);
-      msgsContainer.scrollTop = msgsContainer.scrollHeight;
-      return msg;
+    const getCtx = () => {
+      const headlines = allArticles.slice(0, 15).map(a => `- ${a.title} (${a.source})`).join('\n');
+      const ghRepos = allArticles.filter(a => a.source === 'github').slice(0, 5).map(a => `- ${a.title}`).join('\n');
+      return headlines || 'No headlines loaded yet.';
     };
 
-    const appendTypingIndicator = () => {
-      const msg = document.createElement('div');
-      msg.className = 'chat-msg ai typing-indicator-msg';
-      msg.innerHTML = `
-        <div class="chat-typing-dots">
-          <span></span><span></span><span></span>
-        </div>
-      `;
-      msgsContainer.appendChild(msg);
-      msgsContainer.scrollTop = msgsContainer.scrollHeight;
-      return msg;
-    };
-
-    const handleSendMessage = async (textVal) => {
-      const text = (textVal || inputField.value).trim();
-      if (!text || isTyping) return;
-
-      // Clear input
-      inputField.value = '';
-      isTyping = true;
-
-      // Append User message bubble
-      appendMessage(text, 'user');
-
-      // Append AI Typing indicator bubble
-      const indicator = appendTypingIndicator();
+    const send = async (text) => {
+      text = (text || input.value).trim();
+      if (!text || busy) return;
+      input.value = '';
+      busy = true;
+      addBubble(text, 'user');
+      const typing = addTyping();
 
       try {
-        const context = getChatContext();
         const res = await fetch('/api/summarize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: text,
-            content: context,
-            mode: 'chat'
-          })
+          body: JSON.stringify({ title: text, content: getCtx(), mode: 'chat' }),
         });
-
-        indicator.remove();
-        isTyping = false;
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        typing.remove();
+        busy = false;
+        if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
-        
-        const answer = data.summary || data.text || 'Unable to retrieve response.';
-        appendMessage(answer, 'ai');
-
-      } catch (err) {
-        console.error('Chat error:', err);
-        indicator.remove();
-        isTyping = false;
-        appendMessage('DevPulse AI is currently resting. Please try again in a few moments!', 'ai');
+        addBubble(data.summary || 'No response.', 'ai');
+      } catch {
+        typing.remove();
+        busy = false;
+        addBubble('DevPulse AI is temporarily unavailable. Please try again.', 'ai');
       }
     };
 
-    sendBtn.addEventListener('click', () => handleSendMessage());
-    inputField.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleSendMessage();
-      }
-    });
+    sendBtn.addEventListener('click', () => send());
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+    quickBtns.forEach(b => b.addEventListener('click', () => send(b.dataset.query)));
+  };
 
-    // Quick starter questions triggers
-    quickBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const query = btn.getAttribute('data-query');
-        handleSendMessage(query);
-      });
+  // ════════════════════════════════════════════════
+  //  MOBILE SIDEBAR
+  // ════════════════════════════════════════════════
+  const initMobileSidebar = () => {
+    const menuBtn = document.getElementById('mob-menu-btn');
+    const overlay = document.getElementById('mob-overlay');
+    const sidebar = document.getElementById('sidebar');
+
+    menuBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('open');
     });
+    overlay.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('open');
+    });
+  };
+
+  // ════════════════════════════════════════════════
+  //  INIT
+  // ════════════════════════════════════════════════
+  const init = () => {
+    applyTheme(themeMode);
+    fetchAll();
+    updateStatus();
+    setInterval(fetchAll, REFRESH_MS);
+    initChat();
+    initMobileSidebar();
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
   };
 
   if (document.readyState === 'loading') {
@@ -1115,4 +977,5 @@
   } else {
     init();
   }
+
 })();

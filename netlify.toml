@@ -22,6 +22,21 @@
   status = 200
 
 [[redirects]]
+  from = "/api/lobsters"
+  to = "/.netlify/functions/lobsters"
+  status = 200
+
+[[redirects]]
+  from = "/api/github-trending"
+  to = "/.netlify/functions/github-trending"
+  status = 200
+
+[[redirects]]
+  from = "/api/scrape"
+  to = "/.netlify/functions/scrape"
+  status = 200
+
+[[redirects]]
   from = "/api/summarize"
   to = "/.netlify/functions/summarize"
   status = 200
