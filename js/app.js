@@ -134,8 +134,11 @@
     h = h.replace(/<\/ol>\s*<ol>/g, '');
     h = h.replace(/<oli>/g, '<li>').replace(/<\/oli>/g, '</li>');
 
-    // Links
-    h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Images, then links. The negative lookbehind keeps image markdown from
+    // becoming a plain link in Dev.to articles.
+    h = h.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+      '<img src="$2" alt="$1" loading="lazy" referrerpolicy="no-referrer">');
+    h = h.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
     // Blockquotes
     h = h.replace(/^>\s+(.+)$/gm, '<blockquote>$1</blockquote>');
@@ -281,6 +284,28 @@
     } catch {}
   };
 
+  const articleTime = (a) => new Date(a.time || a.published_at || a.date || a.generatedAt || 0).getTime() || 0;
+
+  const mixSources = (groups) => {
+    const buckets = groups
+      .map(group => group.filter(Boolean).sort((a, b) => articleTime(b) - articleTime(a)))
+      .filter(group => group.length > 0);
+
+    const mixed = [];
+    let added = true;
+    while (added) {
+      added = false;
+      for (const bucket of buckets) {
+        const next = bucket.shift();
+        if (next) {
+          mixed.push(next);
+          added = true;
+        }
+      }
+    }
+    return mixed;
+  };
+
   const fetchAll = async () => {
     renderSkeletons(12);
 
@@ -293,11 +318,7 @@
       fetchDevpulseArticles(),
     ]);
 
-    allArticles = [...hn, ...devto, ...ai, ...lobsters, ...github].sort((a, b) => {
-      const tA = new Date(a.time || a.published_at || a.date || 0).getTime();
-      const tB = new Date(b.time || b.published_at || b.date || 0).getTime();
-      return tB - tA;
-    });
+    allArticles = mixSources([hn, devto, ai, lobsters, github]);
 
     scanBreaking(allArticles);
     updateStrip();
@@ -770,6 +791,13 @@
     }
 
     // Complete scrape failure — show helpful error, offer AI
+    const fallbackText = article.description || article.summary || '';
+    if (fallbackText && fallbackText.length > 20) {
+      setReaderMeta(article, 'Feed excerpt', true);
+      showReaderContent(`> *Source page could not be fully extracted, so DevPulse is showing the feed excerpt.*\n\n${fallbackText}`, 1, true, article);
+      return;
+    }
+
     setReaderMeta(article, null, true);
     readerProse.innerHTML = `
       <div class="feed-notice">

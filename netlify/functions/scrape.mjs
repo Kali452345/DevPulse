@@ -29,6 +29,9 @@ export default async (req) => {
   }
 
   try {
+    const githubReadme = await fetchGithubReadme(targetUrl);
+    if (githubReadme) return json(githubReadme);
+
     const res = await fetchWithTimeout(targetUrl, {
       headers: {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -63,6 +66,37 @@ export default async (req) => {
 };
 
 export const config = { path: "/api/scrape" };
+
+async function fetchGithubReadme(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.hostname !== "github.com") return null;
+    const [, owner, repo] = parsed.pathname.split("/");
+    if (!owner || !repo) return null;
+
+    const headers = {
+      "Accept": "application/vnd.github.raw",
+      "User-Agent": "DevPulse/1.0",
+      ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+    };
+    const res = await fetchWithTimeout(`https://api.github.com/repos/${owner}/${repo}/readme`, { headers }, 10000);
+    if (!res.ok) return null;
+
+    const content = await res.text();
+    const words = content.split(/\s+/).filter(Boolean).length;
+    return {
+      ok: words > 40,
+      title: `${owner}/${repo}`,
+      coverImage: "",
+      content,
+      wordCount: words,
+      readTime: Math.max(1, Math.round(words / 200)),
+      url: targetUrl,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function extractArticleContent($, baseUrl) {
   $("script, style, noscript, nav, footer, header, aside, iframe").remove();

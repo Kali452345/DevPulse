@@ -27,11 +27,11 @@ export default async (req) => {
       if (cached) return json(cached.articles, { "X-Cache": "HIT" });
     }
 
-    let articles = await fetchTrendingPage(since, lang);
-    if (!articles.length) articles = await fetchSearchFallback();
+    let articles = await fetchSearchFallback();
+    if (!articles.length) articles = await fetchTrendingPage(since, lang);
     if (!articles.length) return await staleOrEmpty(store, cacheKey);
 
-    await store.setJSON(cacheKey, { articles, timestamp: Date.now() });
+    await setCached(store, cacheKey, articles);
     return json(articles, { "X-Cache": "MISS" });
   } catch (err) {
     console.error("GitHub trending endpoint error:", err.message);
@@ -98,8 +98,8 @@ async function fetchSearchFallback() {
     ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
   };
 
-  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const query = `created:>${since} stars:>50 fork:false`;
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const query = `created:>${since} stars:>10 fork:false`;
   const res = await fetchWithTimeout(
     `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=30`,
     { headers },
@@ -174,6 +174,14 @@ async function staleOrEmpty(store, key) {
   return json([]);
 }
 
+async function setCached(store, key, articles) {
+  try {
+    await store.setJSON(key, { articles, timestamp: Date.now() });
+  } catch (err) {
+    console.warn(`Failed to save ${key} to Blobs:`, err.message);
+  }
+}
+
 async function fetchWithTimeout(url, opts, ms) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ms);
@@ -183,4 +191,3 @@ async function fetchWithTimeout(url, opts, ms) {
     clearTimeout(timeout);
   }
 }
-

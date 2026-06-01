@@ -1018,6 +1018,18 @@ body::after {
   text-decoration-style: dotted;
 }
 
+.reader-prose img {
+  display: block;
+  width: min(100%, 760px);
+  height: auto;
+  max-height: 520px;
+  object-fit: contain;
+  margin: 1.8em auto;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+
 /* Reading skeleton */
 .reader-skeleton {
   display: flex;
