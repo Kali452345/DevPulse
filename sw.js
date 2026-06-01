@@ -1,5 +1,5 @@
 // sw.js — DevPulse Service Worker for Offline and Caching
-const CACHE_NAME = "devpulse-v2";
+const CACHE_NAME = "devpulse-v3";
 const ASSETS = [
   "/",
   "/index.html",

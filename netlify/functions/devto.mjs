@@ -25,12 +25,12 @@ export default async (req) => {
   try {
     // ── Single Article Fetch (with markdown body) ──────────────────
     if (id) {
-      const res = await fetch(`https://dev.to/api/articles/${id}`, {
+      const res = await fetchWithTimeout(`https://dev.to/api/articles/${id}`, {
         headers: {
           ...(process.env.DEVTO_API_KEY ? { "api-key": process.env.DEVTO_API_KEY } : {}),
           Accept: "application/json",
         },
-      });
+      }, 8000);
 
       if (!res.ok) {
         return new Response(JSON.stringify({ error: `Dev.to API returned ${res.status}` }), {
@@ -88,9 +88,9 @@ export default async (req) => {
       ...(process.env.DEVTO_API_KEY ? { "api-key": process.env.DEVTO_API_KEY } : {}),
     };
 
-    const res = await fetch("https://dev.to/api/articles?per_page=60&top=1", {
+    const res = await fetchWithTimeout("https://dev.to/api/articles?per_page=60&top=1", {
       headers: apiHeaders,
-    });
+    }, 8000);
 
     if (!res.ok) {
       // Try returning stale cache if API fails
@@ -147,3 +147,13 @@ export default async (req) => {
 };
 
 export const config = { path: "/api/devto" };
+
+async function fetchWithTimeout(url, opts, ms) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}

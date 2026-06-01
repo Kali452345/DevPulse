@@ -110,6 +110,10 @@
     // Inline code
     h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 
+    // Images before emphasis/links so URLs with underscores do not get mangled.
+    h = h.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+(?:\([^\s)]*\)[^\s)]*)?)(?:\s+["'][^"']*["'])?\)/g,
+      '<img src="$2" alt="$1" loading="lazy" referrerpolicy="no-referrer">');
+
     // Headers
     h = h.replace(/^#{4}\s+(.+)$/gm, '<h4>$1</h4>');
     h = h.replace(/^#{3}\s+(.+)$/gm, '<h3>$1</h3>');
@@ -134,10 +138,8 @@
     h = h.replace(/<\/ol>\s*<ol>/g, '');
     h = h.replace(/<oli>/g, '<li>').replace(/<\/oli>/g, '</li>');
 
-    // Images, then links. The negative lookbehind keeps image markdown from
+    // Links. The negative lookbehind keeps any remaining image markdown from
     // becoming a plain link in Dev.to articles.
-    h = h.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
-      '<img src="$2" alt="$1" loading="lazy" referrerpolicy="no-referrer">');
     h = h.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
     // Blockquotes
@@ -152,7 +154,7 @@
     h = blocks.map(block => {
       block = block.trim();
       if (!block) return '';
-      if (/^<(h[2-4]|ul|ol|pre|blockquote|hr)/.test(block)) return block;
+      if (/^<(h[2-4]|ul|ol|pre|blockquote|hr|img)/.test(block)) return block;
       return `<p>${block.replace(/\n/g, '<br>')}</p>`;
     }).join('');
 
