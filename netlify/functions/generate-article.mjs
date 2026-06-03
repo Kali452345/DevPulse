@@ -37,7 +37,7 @@ class KeyManager {
 
   handle429(index) {
     if (index >= 0 && index < this.keyStates.length) {
-      this.keyStates[index].cooldownUntil = Date.now() + 60000;
+      this.keyStates[index].cooldownUntil = Date.now() + 60000 + Math.floor(Math.random() * 20000);
     }
   }
 

@@ -98,8 +98,8 @@ async function fetchSearchFallback() {
     ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
   };
 
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const query = `created:>${since} stars:>10 fork:false`;
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const query = `pushed:>${since} stars:>100 fork:false`;
   const res = await fetchWithTimeout(
     `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=30`,
     { headers },

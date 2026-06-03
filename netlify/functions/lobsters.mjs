@@ -90,6 +90,7 @@ async function fetchRssFallback() {
       const description = stripHtml(decodeXml(pickXml(item, "description")));
       const pubDate = pickXml(item, "pubDate");
       const isoDate = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
+      const tags = [...item.matchAll(/<category>([\s\S]*?)<\/category>/g)].map(m => m[1]);
       return {
         id: `lbs-rss-${link || i}`,
         title,
@@ -103,7 +104,7 @@ async function fetchRssFallback() {
         score: 0,
         comments_count: 0,
         descendants: 0,
-        tags: [],
+        tags,
         description,
         source: "lobsters",
       };

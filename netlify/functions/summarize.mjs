@@ -37,7 +37,8 @@ class KeyManager {
 
   handle429(index) {
     if (index >= 0 && index < this.keyStates.length) {
-      this.keyStates[index].cooldownUntil = Date.now() + 60000; // 60s cooldown
+      // 60s cooldown + jitter (0-20s)
+      this.keyStates[index].cooldownUntil = Date.now() + 60000 + Math.floor(Math.random() * 20000);
     }
   }
 
@@ -109,10 +110,10 @@ Context Summary: ${content || "Developer interest news."}
 Your article must:
 1. Be original, professional, and insightful (400-600 words). Do not copy source text directly; rewrite it from a developer's perspective.
 2. Include sections:
-   - A bold hook introduction (Why this matters)
-   - Deep dive details (Technical mechanics/key concepts)
-   - Developer Impact (Practical takeaways, how it changes tools/workflows)
-   - Summary/Conclusion
+   - A bold hook introduction (## Why this matters)
+   - ## Technical Deep Dive (In-depth analysis of mechanics/key concepts)
+   - ## Developer Impact (Practical takeaways, how it changes tools/workflows with technical depth)
+   - ## Summary & Conclusion
 3. Format beautifully in Markdown (use headers ##, bold texts, lists, and code blocks if applicable).
 4. Do not include any meta comments, just output the markdown article.
 
