@@ -24,6 +24,7 @@ export default async (req) => {
     }
 
     let articles = await fetchTensorFeed();
+    if (!articles.length) articles = await fetchOpenAiRss();
     if (!articles.length) articles = await fetchHnAiFallback();
     if (!articles.length) return await staleOrEmpty(store, "ai-feed");
 
@@ -65,10 +66,46 @@ async function fetchTensorFeed() {
   }
 }
 
+async function fetchOpenAiRss() {
+  try {
+    const res = await fetchWithTimeout("https://openai.com/news/rss.xml", 6000);
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 20);
+
+    return items.map((match, i) => {
+      const item = match[1];
+      const title = decodeXml(pickXml(item, "title")) || "Untitled";
+      const link = decodeXml(pickXml(item, "link")) || "https://openai.com/news";
+      const pubDate = pickXml(item, "pubDate");
+      const isoDate = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
+      const description = stripHtml(decodeXml(pickXml(item, "description")));
+
+      return {
+        id: `ai-openai-${link || i}`,
+        title,
+        url: link,
+        link,
+        date: isoDate,
+        published_at: isoDate,
+        time: isoDate,
+        summary: description,
+        description,
+        author: "OpenAI",
+        tags: ["ai", "openai"],
+        source: "ai-news",
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 async function fetchHnAiFallback() {
   const queries = [
     "AI LLM ChatGPT Claude Gemini Anthropic OpenAI",
     "machine learning neural network deep learning transformer diffusion",
+    "Generative AI Transformers Agents Robotics",
   ];
 
   const responses = await Promise.all(queries.map((query) =>
@@ -139,4 +176,22 @@ async function fetchWithTimeout(url, ms) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function pickXml(xml, tag) {
+  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match?.[1]?.replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "").trim() || "";
+}
+
+function decodeXml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function stripHtml(value) {
+  return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }

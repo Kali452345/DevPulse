@@ -24,11 +24,18 @@ export default async (req) => {
     }
 
     const [topRes, bestRes] = await Promise.all([
-      fetchWithTimeout("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=60", 8000),
-      fetchWithTimeout("https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=40&page=1", 8000),
+      fetchWithTimeout("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=60", 8000).catch(() => ({ ok: false })),
+      fetchWithTimeout("https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=40&page=1", 8000).catch(() => ({ ok: false })),
     ]);
 
-    if (!topRes.ok && !bestRes.ok) return await staleOrEmpty(store, "hn-feed");
+    if (!topRes.ok && !bestRes.ok) {
+      const fbArticles = await fetchFirebaseFallback();
+      if (fbArticles.length) {
+        await store.setJSON("hn-feed", { articles: fbArticles, timestamp: Date.now() });
+        return json(fbArticles, { "X-Cache": "MISS-FIREBASE" });
+      }
+      return await staleOrEmpty(store, "hn-feed");
+    }
 
     const seen = new Set();
     const articles = [];
@@ -95,5 +102,37 @@ async function fetchWithTimeout(url, ms) {
     return await fetch(url, { signal: controller.signal });
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function fetchFirebaseFallback() {
+  try {
+    const res = await fetchWithTimeout("https://hacker-news.firebaseio.com/v0/topstories.json", 5000);
+    if (!res.ok) return [];
+    const ids = (await res.json()).slice(0, 30);
+    const stories = await Promise.all(
+      ids.map(id =>
+        fetchWithTimeout(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, 3000)
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      )
+    );
+    return stories.filter(s => s && s.title).map(h => ({
+      id: String(h.id),
+      title: h.title,
+      url: h.url || `https://news.ycombinator.com/item?id=${h.id}`,
+      link: h.url || `https://news.ycombinator.com/item?id=${h.id}`,
+      by: h.by || "",
+      author: h.by || "",
+      time: new Date((h.time || 0) * 1000).toISOString(),
+      points: h.score || 0,
+      score: h.score || 0,
+      descendants: h.descendants || 0,
+      comments_count: h.descendants || 0,
+      source: "hackernews",
+    }));
+  } catch (err) {
+    console.error("Firebase fallback failed:", err.message);
+    return [];
   }
 }

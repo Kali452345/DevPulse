@@ -47,18 +47,19 @@ export default async (req) => {
 
     const html = await res.text();
     const $ = cheerio.load(html);
-    const { title, coverImage, content } = extractArticleContent($, targetUrl);
+    const { title, coverImage, content, isPaywalled } = extractArticleContent($, targetUrl);
     const words = content.split(/\s+/).filter(Boolean).length;
     const readTime = Math.max(1, Math.round(words / 200));
 
     return json({
-      ok: words > 80,
+      ok: words > 80 && !isPaywalled,
       title,
       coverImage,
       content,
       wordCount: words,
       readTime,
       url: targetUrl,
+      isPaywalled,
     });
   } catch (err) {
     return json({ ok: false, content: "", reason: err.message });
@@ -127,6 +128,7 @@ function extractArticleContent($, baseUrl) {
 
   const selectors = [
     "article",
+    "[itemprop='articleBody']",
     "[class*='post-content']",
     "[class*='entry-content']",
     "[class*='article-body']",
@@ -138,6 +140,7 @@ function extractArticleContent($, baseUrl) {
     "[class*='rich-text']",
     "main",
     "#main-content",
+    "#article-body",
     "#content",
     ".content",
     "[role='main']",
@@ -157,7 +160,9 @@ function extractArticleContent($, baseUrl) {
   }
 
   const content = extractNodes($, contentEl || $("body"), { includeShortParagraphs: false });
-  return { title: pageTitle, coverImage, content };
+  const isPaywalled = $("[class*='paywall'], [class*='gate'], [class*='subscribe-prompt'], [id*='paywall']").length > 0;
+
+  return { title: pageTitle, coverImage, content, isPaywalled };
 }
 
 function extractNodes($, root, { includeShortParagraphs }) {
